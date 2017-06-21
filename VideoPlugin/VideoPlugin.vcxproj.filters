@@ -18,15 +18,9 @@
     <ClInclude Include="VideoPlugin.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="interpstrategy.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="VideoPlugin.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="interpstrategy.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

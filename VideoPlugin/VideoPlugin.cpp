@@ -13,7 +13,13 @@ GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
 
 static int current_id = 0;
-static int interp_mode = 0;
+static byte interp_mode = 1;
+
+enum InterpMode
+{
+	Linear = 0,
+	QuadraticBezier = 1
+};
 
 template <class Archive>
 void serialize(Archive & ar, Vector & vector)
@@ -65,36 +71,131 @@ string rotator_to_string(Rotator r) {
 	return to_string_with_precision(r.Pitch, 2) + ", " + to_string_with_precision(r.Yaw, 2) + ", " + to_string_with_precision(r.Roll, 2);
 }
 
+float calculateParam(float x0, float x1, float x2, float t) {
+	return pow(1 - t, 2) * x0 + 2 * t*(1 - t)*x1 + pow(t, 2)*x2;
+}
+
+Vector quadraticBezierCurve(Vector p0, Vector p1, Vector p2, float t) {
+	return{
+		calculateParam(p0.X, p1.X, p2.X, t) ,
+		calculateParam(p0.Y, p1.Y, p2.Y, t) ,
+		calculateParam(p0.Z, p1.Z, p2.Z, t)
+	};
+}
+
 Path currentPath;
 bool playbackActive = false;
+
+bool firstFrame = false;
+int lastGenBezierId = -1;
 long long playback() {
 	ReplayWrapper sw = gw->GetGameEventAsReplay();
 
-	float replaySeconds = sw.GetReplayTimeElapsed();
+	float replaySeconds = sw.GetReplayTimeElapsed(); //replay seconds are at 30 tickrate? so only updated once every 1/30 s
 	float currentTimeInMs = sw.GetSecondsElapsed();
+	
+
 	CameraSnapshot prevSave;
 	CameraSnapshot nextSave;
-	prevSave.timeStamp = -1;
-	nextSave.timeStamp = -1;
+	CameraSnapshot nextNextSave;
+	
+	if ((interp_mode == 0 && currentPath.saves.size() < 2) || (interp_mode == 1 && currentPath.saves.size() < 3)) //No frames, don't need to execute, need atleast 2 for linterp, 3 for bezier
+	{ 
+		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
+		firstFrame = true;
+		return 1.f;
+	}
+
+	if (currentPath.saves.begin()->first > replaySeconds || (--currentPath.saves.end())->first < replaySeconds) //Replay time doesn't have any snapshots
+	{
+		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
+		firstFrame = true;
+		return 1.f;
+	}
+
+
+	
 	for (auto it = currentPath.saves.begin(); it != currentPath.saves.end(); it++)
 	{
-		if (it->first > replaySeconds && nextSave.timeStamp < 0)
+		//if (it->first > replaySeconds && prevSave.timeStamp >= 0 && nextSave.timeStamp < 0) //why not ++ the it lol?
+		//{
+		//	nextSave = it->second;
+		//}
+		//else if (it->first > replaySeconds && nextSave.timeStamp >= 0) {
+		//	nextNextSave = it->second;
+		//	break;
+		//}
+
+
+		int it_incs = 0;
+		prevSave = it->second;
+		if (++it != currentPath.saves.end())
 		{
 			nextSave = it->second;
+			it_incs++;
+			if (++it != currentPath.saves.end())
+			{
+				nextNextSave = it->second;
+				it_incs++;
+			}
+		}
+
+		
+		if (prevSave.timeStamp <= replaySeconds && nextSave.timeStamp >= replaySeconds)
+		{
+			if (nextNextSave.timeStamp < 0 && interp_mode == 1) { //if there is no nextnext, just take last 3 items
+				it = (currentPath.saves.end());
+				nextNextSave = (--it)->second;
+				nextSave = (--it)->second;
+				prevSave = (--it)->second;
+				it_incs = 0;
+			}
+			if (lastGenBezierId != prevSave.id)
+			{
+				for (int i = 0; i < it_incs; i++)
+				{
+					--it;
+				}
+				if (!firstFrame) 
+				{
+					it->second.location = gw->GetCamera().GetLocation() - Vector(1);
+					it->second.rotation = gw->GetCamera().GetRotation() - Rotator(1);
+					it->second.FOV = gw->GetCamera().GetPOV().FOV;
+				}
+				lastGenBezierId = prevSave.id;
+			}
 			break;
 		}
-		prevSave = it->second;
+		else {
+			prevSave.timeStamp = -1;
+			nextSave.timeStamp = -1;
+			nextNextSave.timeStamp = -1;
+			for (int i = 0; i < it_incs; i++) 
+			{
+				--it;
+			}
+		}
+
 	}
+
+	
 
 	if (nextSave.timeStamp >= 0 && prevSave.timeStamp >= 0)
 	{
+		if (firstFrame) 
+		{
+			gw->GetCamera().SetLocation(prevSave.location);
+			gw->GetCamera().SetRotation(prevSave.rotation);
+			gw->GetCamera().SetFOV(prevSave.FOV);
+			firstFrame = false;
+		}
+
 		float frameDiff = nextSave.timeStamp - prevSave.timeStamp;
 		float timeElapsed = currentTimeInMs - prevSave.timeStamp;
 
 		Rotator snapR = Rotator(frameDiff);
 		Vector snap = Vector(frameDiff);
-
-		Vector newLoc = prevSave.location + ((nextSave.location - prevSave.location) * timeElapsed) / snap;
+		
 		if (prevSave.rotation.Yaw < -32768 / 2 && nextSave.rotation.Yaw > 32768 / 2) {
 			nextSave.rotation.Yaw -= 32768 * 2;
 		}
@@ -116,22 +217,43 @@ long long playback() {
 			nextSave.rotation.Pitch += 16364 * 2;
 		}
 
-		Rotator newRot;
-		newRot.Pitch = prevSave.rotation.Pitch + ((nextSave.rotation.Pitch - prevSave.rotation.Pitch) * timeElapsed / frameDiff);
-		newRot.Yaw = prevSave.rotation.Yaw + ((nextSave.rotation.Yaw - prevSave.rotation.Yaw) * timeElapsed / frameDiff);
-		newRot.Roll = prevSave.rotation.Roll + ((nextSave.rotation.Roll - prevSave.rotation.Roll) * timeElapsed / frameDiff);
 
+		Vector newLoc; 
+		Rotator newRot;
+		float newFOV = 0;
+		float percElapsed = 0;
+
+		switch (interp_mode) {
+		case Linear:
+			percElapsed = timeElapsed / frameDiff;
+			newLoc = prevSave.location + ((nextSave.location - prevSave.location) * timeElapsed) / snap;
+			newRot.Pitch = prevSave.rotation.Pitch + ((nextSave.rotation.Pitch - prevSave.rotation.Pitch) * percElapsed);
+			newRot.Yaw = prevSave.rotation.Yaw + ((nextSave.rotation.Yaw - prevSave.rotation.Yaw) * percElapsed);
+			newRot.Roll = prevSave.rotation.Roll + ((nextSave.rotation.Roll - prevSave.rotation.Roll) * percElapsed);
+			newFOV = prevSave.FOV + ((nextSave.FOV - prevSave.FOV) * percElapsed);
+			break;
+		case QuadraticBezier:
+			percElapsed = (timeElapsed / (nextNextSave.timeStamp - prevSave.timeStamp));
+			if (percElapsed > 1)
+				percElapsed = 1;
+			newLoc = quadraticBezierCurve(prevSave.location, nextSave.location, nextNextSave.location, percElapsed);
+			newRot.Pitch = calculateParam(prevSave.rotation.Pitch, nextSave.rotation.Pitch, nextNextSave.rotation.Pitch, percElapsed);
+			newRot.Yaw = calculateParam(prevSave.rotation.Yaw, nextSave.rotation.Yaw, nextNextSave.rotation.Yaw, percElapsed);
+			newRot.Roll = calculateParam(prevSave.rotation.Roll, nextSave.rotation.Roll, nextNextSave.rotation.Roll, percElapsed);
+			newFOV = calculateParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
+			break;
+		}
+		
 		POV p;
 		p.location = newLoc + Vector(0);
 		p.rotation = newRot + Rotator(0);
-		p.FOV = prevSave.FOV;
-
-
+		p.FOV = newFOV;
 
 		gw->GetCamera().SetPOV(p);
 	}
 	else {
 		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
+		firstFrame = true;
 	}
 
 	return 1.f;
@@ -207,8 +329,8 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 	else if (command.compare("dolly_interpmode") == 0) 
 	{
 		if (params.size() < 2) {
-			cons->log("Current dolly interp mode is " + interp_mode);
-			cons->log("0=linear, 1=bezier");
+			cons->log("Current dolly interp mode is " + to_string(interp_mode));
+			cons->log("0=linear, 1=quadratic bezier");
 			return;
 		}
 		interp_mode = get_safe_int(params.at(1));
@@ -249,7 +371,8 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		if (params.size() < 2) {
 			cons->log("Usage: " + params.at(0) + " id");
 			return;
-		}
+		} 
+		
 		int id = get_safe_int(params.at(1));
 		for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
 		{
@@ -258,6 +381,15 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 				cons->log("ID " + to_string(it->second.id) + ". FOV: " + to_string(it->second.FOV) + ". Time: " + to_string_with_precision(it->second.timeStamp, 3));
 				cons->log("Location " + vector_to_string(it->second.location));
 				cons->log("Rotation " + rotator_to_string(it->second.rotation));
+				if (params.size() == 3) {
+					string action = params.at(2);
+					if (action.compare("set") == 0) {
+						gw->GetCamera().SetLocation(it->second.location);
+						gw->GetCamera().SetRotation(it->second.rotation);
+						gw->GetCamera().SetFOV(it->second.FOV);
+					}
+				}
+
 				return;
 			}
 			else

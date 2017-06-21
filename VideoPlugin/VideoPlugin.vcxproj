@@ -118,11 +118,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="interpstrategy.h" />
     <ClInclude Include="VideoPlugin.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="interpstrategy.cpp" />
     <ClCompile Include="VideoPlugin.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
