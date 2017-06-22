@@ -83,11 +83,17 @@ Vector quadraticBezierCurve(Vector p0, Vector p1, Vector p2, float t) {
 	};
 }
 
+//ofstream camlog;
+
+
+
 Path currentPath;
 bool playbackActive = false;
 
 bool firstFrame = false;
 int lastGenBezierId = -1;
+
+CameraSnapshot usedSave;
 long long playback() {
 	ReplayWrapper sw = gw->GetGameEventAsReplay();
 
@@ -156,11 +162,13 @@ long long playback() {
 				{
 					--it;
 				}
+				usedSave = it->second;
 				if (!firstFrame) 
 				{
-					it->second.location = gw->GetCamera().GetLocation() - Vector(1);
-					it->second.rotation = gw->GetCamera().GetRotation() - Rotator(1);
-					it->second.FOV = gw->GetCamera().GetPOV().FOV;
+					usedSave.location = gw->GetCamera().GetLocation() - Vector(1);
+					usedSave.rotation = gw->GetCamera().GetRotation();
+					usedSave.FOV = gw->GetCamera().GetPOV().FOV;
+					prevSave = usedSave;
 				}
 				lastGenBezierId = prevSave.id;
 			}
@@ -182,6 +190,7 @@ long long playback() {
 
 	if (nextSave.timeStamp >= 0 && prevSave.timeStamp >= 0)
 	{
+		prevSave = usedSave;
 		if (firstFrame) 
 		{
 			gw->GetCamera().SetLocation(prevSave.location);
@@ -233,6 +242,8 @@ long long playback() {
 			newFOV = prevSave.FOV + ((nextSave.FOV - prevSave.FOV) * percElapsed);
 			break;
 		case QuadraticBezier:
+			if (timeElapsed < 0.0001)
+				timeElapsed = 0.0001;
 			percElapsed = (timeElapsed / (nextNextSave.timeStamp - prevSave.timeStamp));
 			if (percElapsed > 1)
 				percElapsed = 1;
@@ -248,7 +259,10 @@ long long playback() {
 		p.location = newLoc + Vector(0);
 		p.rotation = newRot + Rotator(0);
 		p.FOV = newFOV;
-
+		//camlog << "ID: " + to_string(prevSave.id) + ", [" + to_string_with_precision(currentTimeInMs, 4) + "][" + to_string_with_precision(timeElapsed, 4) + "][" + to_string_with_precision(p.FOV, 2) + "] (" + vector_to_string(p.location) + ") (" + rotator_to_string(p.rotation) + " )\n";
+		//camlog.flush();
+		//camlog << to_string(prevSave.id) + "," + to_string_with_precision(currentTimeInMs, 10) + ", " + to_string_with_precision(timeElapsed, 10) + "," + to_string_with_precision(origPrevSave.FOV, 10) + "," + vector_to_string(origPrevSave.location) + "," + rotator_to_string(origPrevSave.rotation) + "," + to_string_with_precision(p.FOV, 10) + "," + vector_to_string(p.location) + "," + rotator_to_string(p.rotation) + "\n";
+		//camlog.flush();
 		gw->GetCamera().SetPOV(p);
 	}
 	else {
@@ -282,6 +296,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			cons->log("Usage: " + params.at(0) + " filename");
 			return;
 		}
+		//camlog.open("camlog.txt");
 		string filename = params.at(1);
 		if (!file_exists("./bakkesmod/data/campaths/" + filename + ".json")) 
 		{
@@ -325,6 +340,10 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			cereal::JSONOutputArchive  oarchive(ofs); // Choose binary format, writingdirection.
 			oarchive(CEREAL_NVP(currentPath)); //oarchive(saves); // Save the modified instance.
 		}
+	}
+	else if (command.compare("dolly_path_clear") == 0)
+	{
+		currentPath.saves.clear();
 	}
 	else if (command.compare("dolly_interpmode") == 0) 
 	{
@@ -514,6 +533,7 @@ void VideoPlugin::onLoad()
 
 	cons->registerNotifier("dolly_path_save", videoPlugin_onCommand);
 	cons->registerNotifier("dolly_path_load", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_path_clear", videoPlugin_onCommand);
 
 	cons->registerNotifier("dolly_cam_show", videoPlugin_onCommand);
 	cons->registerNotifier("dolly_cam_set_location", videoPlugin_onCommand);
