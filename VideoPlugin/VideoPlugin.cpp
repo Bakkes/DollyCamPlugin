@@ -236,42 +236,46 @@ long long playback() {
 		}
 		if (prevSave.rotation.Roll < 0) 
 		{
-			if (nextSave.rotation.Roll > 0) 
+			if (nextSave.rotation.Roll > 0 && prevSave.rotation.Roll - nextSave.rotation.Roll > 32768)
 			{
 				nextSave.rotation.Roll -= 32768 * 2;
 			}
-			if (nextNextSave.rotation.Roll > 0) {
+			if (nextNextSave.rotation.Roll > 0 && nextNextSave.rotation.Roll - prevSave.rotation.Roll > 32768) 
+			{
 				nextNextSave.rotation.Roll -= 32768 * 2;
 			}
 		}
 		else if (prevSave.rotation.Roll > 0) 
 		{
-			if (nextSave.rotation.Roll < 0) 
+			if (nextSave.rotation.Roll < 0 && prevSave.rotation.Roll - nextSave.rotation.Roll > 32768)
 			{
 				nextSave.rotation.Roll += 32768 * 2;
 			}
-			if (nextNextSave.rotation.Roll < 0) {
+			if (nextNextSave.rotation.Roll < 0 && prevSave.rotation.Roll - nextNextSave.rotation.Roll > 32768) 
+			{
 				nextNextSave.rotation.Roll += 32768 * 2;
 			}
 		}
 		if (prevSave.rotation.Pitch < 0) 
 		{
-			if (nextSave.rotation.Pitch > 0)
+			if (nextSave.rotation.Pitch > 0 && prevSave.rotation.Pitch - nextSave.rotation.Pitch > 16364)
 			{
 				nextSave.rotation.Pitch -= 16364 * 2;
 			}
-			if (nextNextSave.rotation.Roll > 0) {
-				nextNextSave.rotation.Roll -= 16364 * 2;
+			if (nextNextSave.rotation.Pitch > 0 && nextNextSave.rotation.Pitch - prevSave.rotation.Pitch > 16364)
+			{
+				nextNextSave.rotation.Pitch -= 16364 * 2;
 			}
 		}
 		else if (prevSave.rotation.Pitch > 0) 
 		{
-			if (nextSave.rotation.Pitch < 0) 
+			if (nextSave.rotation.Pitch < 0 && prevSave.rotation.Pitch - nextSave.rotation.Pitch > 16364)
 			{
 				nextSave.rotation.Pitch += 16364 * 2;
 			}
-			if (nextNextSave.rotation.Roll < 0) {
-				nextNextSave.rotation.Roll += 16364 * 2;
+			if (nextNextSave.rotation.Pitch < 0 && prevSave.rotation.Pitch - nextNextSave.rotation.Pitch > 16364)
+			{
+				nextNextSave.rotation.Pitch += 16364 * 2;
 			}
 		}
 		
