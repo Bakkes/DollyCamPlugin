@@ -521,7 +521,36 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 	else if (gw->GetCamera().GetCameraState().compare("CameraState_ReplayFly_TA") != 0) 
 	{
 		cons->log("You need to be in fly camera mode to use this command");
-	} 
+	}
+	else if (command.compare("dolly_snapshot_override") == 0)
+	{
+		if (params.size() < 2) {
+			cons->log("Usage: " + params.at(0) + " id");
+			return;
+		}
+
+		int id = get_safe_int(params.at(1));
+		for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
+		{
+			if (it->second.id == id)
+			{
+				ReplayWrapper sw = gw->GetGameEventAsReplay();
+				CameraWrapper flyCam = gw->GetCamera();
+
+				POV currentPov = flyCam.GetPOV();
+				it->second.frame = sw.GetCurrentReplayFrame();
+				it->second.location = currentPov.location;
+				it->second.rotation = currentPov.rotation;
+				it->second.FOV = currentPov.FOV;
+				cons->log("Updated snapshot with id " + to_string(current_id));
+				return;
+			}
+			else
+			{
+				++it;
+			}
+		}
+	}
 	else if (command.compare("dolly_snapshot_take") == 0)
 	{
 		ReplayWrapper sw = gw->GetGameEventAsReplay();
@@ -614,6 +643,7 @@ void VideoPlugin::onLoad()
 	cons->registerNotifier("dolly_snapshot_take", videoPlugin_onCommand);
 	cons->registerNotifier("dolly_snapshot_list", videoPlugin_onCommand);
 	cons->registerNotifier("dolly_snapshot_info", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_snapshot_override", videoPlugin_onCommand);
 	cons->registerNotifier("dolly_snapshot_delete", videoPlugin_onCommand);
 
 	cons->registerNotifier("dolly_activate", videoPlugin_onCommand);
