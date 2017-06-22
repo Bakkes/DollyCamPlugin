@@ -9,6 +9,8 @@
 
 BAKKESMOD_PLUGIN(VideoPlugin, "Video plugin", "0.2", 0)
 
+
+//Known bug, cannot have path after goal if path started before goal
 GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
 
@@ -36,6 +38,7 @@ void serialize(Archive & ar, Rotator & rotator)
 struct CameraSnapshot {
 	int id;
 	float timeStamp;
+	int frame;
 	Vector location;
 	Rotator rotation;
 	float FOV;
@@ -44,7 +47,7 @@ struct CameraSnapshot {
 	template <class Archive>
 	void serialize(Archive & ar)
 	{
-		ar(CEREAL_NVP(id), CEREAL_NVP(timeStamp));
+		ar(CEREAL_NVP(id), CEREAL_NVP(timeStamp), CEREAL_NVP(frame));
 		ar(CEREAL_NVP(location));
 		ar(CEREAL_NVP(rotation));
 		ar(CEREAL_NVP(FOV));
@@ -335,6 +338,23 @@ long long playback() {
 	return 1.f;
 }
 
+void AddKeyFrame(int frame) 
+{
+	return;
+	if (!gw->IsInReplay())
+		return;
+	ReplayWrapper sw = gw->GetGameEventAsReplay();
+	sw.AddKeyFrame(frame, "Team0Joined");
+}
+
+void RemoveKeyFrame(int frame) {
+	return;
+	if (!gw->IsInReplay())
+		return;
+	ReplayWrapper sw = gw->GetGameEventAsReplay();
+	sw.RemoveKeyFrame(frame);
+}
+
 void run_playback() {
 	if (!gw->IsInReplay() || !playbackActive) 
 	{
@@ -507,10 +527,12 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		
 		POV currentPov = flyCam.GetPOV();
 		save.id = current_id;
+		save.frame = sw.GetCurrentReplayFrame();
 		save.location = currentPov.location;
 		save.rotation = currentPov.rotation;
 		save.FOV = currentPov.FOV;
 		currentPath.saves.insert(std::make_pair(save.timeStamp, save));
+		AddKeyFrame(save.frame);
 		cons->log("Snapshot saved under id " + to_string(current_id));
 		current_id++;
 	}
