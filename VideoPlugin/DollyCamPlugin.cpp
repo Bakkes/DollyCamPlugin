@@ -1,4 +1,4 @@
-#include "VideoPlugin.h"
+#include "DollyCamPlugin.h"
 #include <map>
 #include "helpers.h"
 #include <fstream>
@@ -7,7 +7,7 @@
 #include <cereal/archives/binary.hpp>
 #include <cereal/archives/json.hpp>
 
-BAKKESMOD_PLUGIN(VideoPlugin, "Video plugin", "0.2", 0)
+BAKKESMOD_PLUGIN(DollyCamPlugin, "Dollycam plugin", "0.2", 0)
 
 
 //Known bug, cannot have path after goal if path started before goal
@@ -451,7 +451,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		{
 			if (it->second.id == id)
 			{
-				currentPath.saves.erase(it++);
+				currentPath.saves.erase(it);
 				cons->log("Removed snapshot with id " + params.at(1));
 				return;
 			}
@@ -536,13 +536,19 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			{
 				ReplayWrapper sw = gw->GetGameEventAsReplay();
 				CameraWrapper flyCam = gw->GetCamera();
-
 				POV currentPov = flyCam.GetPOV();
-				it->second.frame = sw.GetCurrentReplayFrame();
-				it->second.location = currentPov.location;
-				it->second.rotation = currentPov.rotation;
-				it->second.FOV = currentPov.FOV;
-				cons->log("Updated snapshot with id " + to_string(current_id));
+
+				CameraSnapshot snapshot;
+				snapshot.id = id;
+				snapshot.timeStamp = it->second.timeStamp;
+
+				currentPath.saves.erase(it);
+				snapshot.frame = sw.GetCurrentReplayFrame();
+				snapshot.location = currentPov.location;
+				snapshot.rotation = currentPov.rotation;
+				snapshot.FOV = currentPov.FOV;
+				currentPath.saves.insert(std::make_pair(snapshot.timeStamp, snapshot));
+				cons->log("Updated snapshot with id " + to_string(id));
 				return;
 			}
 			else
@@ -635,7 +641,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 	}
 }
 
-void VideoPlugin::onLoad()
+void DollyCamPlugin::onLoad()
 {
 	gw = gameWrapper;
 	cons = console;
@@ -662,6 +668,6 @@ void VideoPlugin::onLoad()
 	cons->registerNotifier("dolly_interpmode", videoPlugin_onCommand);
 }
 
-void VideoPlugin::onUnload()
+void DollyCamPlugin::onUnload()
 {
 }

@@ -2,7 +2,7 @@
 #pragma comment(lib, "BakkesMod.lib")
 #include "plugin\bakkesmodplugin.h"
 
-class VideoPlugin : public bakkesmod::plugin::BakkesModPlugin
+class DollyCamPlugin : public bakkesmod::plugin::BakkesModPlugin
 {
 public:
 	virtual void onLoad();
