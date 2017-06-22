@@ -85,7 +85,11 @@ Vector quadraticBezierCurve(Vector p0, Vector p1, Vector p2, float t) {
 
 //ofstream camlog;
 
-
+template <typename T>
+T closest(T num, T one, T two) 
+{
+	return abs(num - one) < abs(num - two) ? two : one;
+}
 
 Path currentPath;
 bool playbackActive = false;
@@ -193,6 +197,7 @@ long long playback() {
 		prevSave = usedSave;
 		if (firstFrame) 
 		{
+
 			gw->GetCamera().SetLocation(prevSave.location);
 			gw->GetCamera().SetRotation(prevSave.rotation);
 			gw->GetCamera().SetFOV(prevSave.FOV);
@@ -205,14 +210,71 @@ long long playback() {
 		Rotator snapR = Rotator(frameDiff);
 		Vector snap = Vector(frameDiff);
 		
-		if (prevSave.rotation.Yaw < -32768 / 2 && nextSave.rotation.Yaw > 32768 / 2) {
-			nextSave.rotation.Yaw -= 32768 * 2;
+		if (prevSave.rotation.Yaw < 0) 
+		{
+			if (nextSave.rotation.Yaw > 0 && nextSave.rotation.Yaw - prevSave.rotation.Yaw > 32768)
+			{
+				nextSave.rotation.Yaw -= 32768 * 2;
+			}
+			if (nextNextSave.rotation.Yaw > 0 && nextNextSave.rotation.Yaw - prevSave.rotation.Yaw > 32768)
+			{
+				nextNextSave.rotation.Yaw -= 32768 * 2;
+			}
 		}
-		if (prevSave.rotation.Yaw > 32768 / 2 && nextSave.rotation.Yaw < -32768 / 2) {
-			nextSave.rotation.Yaw += 32768 * 2;
+		else if (prevSave.rotation.Yaw > 0) {
+			if (nextSave.rotation.Yaw < 0 && prevSave.rotation.Yaw - nextSave.rotation.Yaw > 32768)
+			{
+				nextSave.rotation.Yaw += 32768 * 2;
+			}
+			if (nextNextSave.rotation.Yaw < 0 && prevSave.rotation.Yaw - nextNextSave.rotation.Yaw > 32768)
+			{
+				nextNextSave.rotation.Yaw += 32768 * 2;
+			}
 		}
+		if (prevSave.rotation.Roll < 0) 
+		{
+			if (nextSave.rotation.Roll > 0) 
+			{
+				nextSave.rotation.Roll -= 32768 * 2;
+			}
+			if (nextNextSave.rotation.Roll > 0) {
+				nextNextSave.rotation.Roll -= 32768 * 2;
+			}
+		}
+		else if (prevSave.rotation.Roll > 0) 
+		{
+			if (nextSave.rotation.Roll < 0) 
+			{
+				nextSave.rotation.Roll += 32768 * 2;
+			}
+			if (nextNextSave.rotation.Roll < 0) {
+				nextNextSave.rotation.Roll += 32768 * 2;
+			}
+		}
+		if (prevSave.rotation.Pitch < 0) 
+		{
+			if (nextSave.rotation.Pitch > 0)
+			{
+				nextSave.rotation.Pitch -= 16364 * 2;
+			}
+			if (nextNextSave.rotation.Roll > 0) {
+				nextNextSave.rotation.Roll -= 16364 * 2;
+			}
+		}
+		else if (prevSave.rotation.Pitch > 0) 
+		{
+			if (nextSave.rotation.Pitch < 0) 
+			{
+				nextSave.rotation.Pitch += 16364 * 2;
+			}
+			if (nextNextSave.rotation.Roll < 0) {
+				nextNextSave.rotation.Roll += 16364 * 2;
+			}
+		}
+		
+		
 
-		if (prevSave.rotation.Roll < -32768 / 2 && nextSave.rotation.Roll > 32768 / 2) {
+		/*if (prevSave.rotation.Roll < -32768 / 2 && nextSave.rotation.Roll > 32768 / 2) {
 			nextSave.rotation.Roll -= 32768 * 2;
 		}
 		if (prevSave.rotation.Roll > 32768 / 2 && nextSave.rotation.Roll < -32768 / 2) {
@@ -224,7 +286,7 @@ long long playback() {
 		}
 		if (prevSave.rotation.Pitch > 16364 / 2 && nextSave.rotation.Pitch < -16364 / 2) {
 			nextSave.rotation.Pitch += 16364 * 2;
-		}
+		}*/
 
 
 		Vector newLoc; 
@@ -261,7 +323,7 @@ long long playback() {
 		p.FOV = newFOV;
 		//camlog << "ID: " + to_string(prevSave.id) + ", [" + to_string_with_precision(currentTimeInMs, 4) + "][" + to_string_with_precision(timeElapsed, 4) + "][" + to_string_with_precision(p.FOV, 2) + "] (" + vector_to_string(p.location) + ") (" + rotator_to_string(p.rotation) + " )\n";
 		//camlog.flush();
-		//camlog << to_string(prevSave.id) + "," + to_string_with_precision(currentTimeInMs, 10) + ", " + to_string_with_precision(timeElapsed, 10) + "," + to_string_with_precision(origPrevSave.FOV, 10) + "," + vector_to_string(origPrevSave.location) + "," + rotator_to_string(origPrevSave.rotation) + "," + to_string_with_precision(p.FOV, 10) + "," + vector_to_string(p.location) + "," + rotator_to_string(p.rotation) + "\n";
+		//camlog << to_string(prevSave.id) + "," + to_string_with_precision(currentTimeInMs, 10) + ", " + to_string_with_precision(timeElapsed, 10) + "," + to_string_with_precision(usedSave.FOV, 10) + "," + vector_to_string(usedSave.location) + "," + rotator_to_string(usedSave.rotation) + "," + to_string_with_precision(p.FOV, 10) + "," + vector_to_string(p.location) + "," + rotator_to_string(p.rotation) + "," + rotator_to_string(usedSave.rotation) + "\n";
 		//camlog.flush();
 		gw->GetCamera().SetPOV(p);
 	}
