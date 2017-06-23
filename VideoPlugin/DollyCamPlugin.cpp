@@ -15,12 +15,13 @@ GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
 
 static int current_id = 0;
-static byte interp_mode = 1;
+static byte interp_mode = 2;
 
 enum InterpMode
 {
 	Linear = 0,
-	QuadraticBezier = 1
+	QuadraticBezier = 1,
+	RationalBezier = 2
 };
 
 template <class Archive>
@@ -513,7 +514,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		CameraWrapper cam = gw->GetCamera();
 		auto location = cam.GetLocation();
 		auto rotation = cam.GetRotation();
-		cons->log("Time: " + to_string_with_precision(gw->GetGameEventAsReplay().GetSecondsElapsed(), 5));
+		cons->log("Time: " + to_string_with_precision(gw->GetGameEventAsReplay().GetReplayTimeElapsed(), 5));
 		cons->log("FOV: " + to_string_with_precision(cam.GetPOV().FOV, 5));
 		cons->log("Location " + vector_to_string(location));
 		cons->log("Rotation " + rotator_to_string(rotation));
