@@ -15,7 +15,8 @@ GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
 
 static int current_id = 0;
-static byte interp_mode = 2;
+static byte interp_mode = 1;
+static bool renderPath = false;
 
 enum InterpMode
 {
@@ -173,9 +174,9 @@ long long playback() {
 				usedSave = it->second;
 				if (!firstFrame) 
 				{
-					usedSave.location = gw->GetCamera().GetLocation() - Vector(1);
+					usedSave.location = gw->GetCamera().GetLocation();
 					usedSave.rotation = gw->GetCamera().GetRotation();
-					usedSave.FOV = gw->GetCamera().GetPOV().FOV;
+					usedSave.FOV = gw->GetCamera().GetFOV();
 					prevSave = usedSave;
 				}
 				lastGenBezierId = prevSave.id;
@@ -515,7 +516,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		auto location = cam.GetLocation();
 		auto rotation = cam.GetRotation();
 		cons->log("Time: " + to_string_with_precision(gw->GetGameEventAsReplay().GetReplayTimeElapsed(), 5));
-		cons->log("FOV: " + to_string_with_precision(cam.GetPOV().FOV, 5));
+		cons->log("FOV: " + to_string_with_precision(cam.GetFOV(), 5));
 		cons->log("Location " + vector_to_string(location));
 		cons->log("Rotation " + rotator_to_string(rotation));
 	} 
@@ -537,7 +538,6 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			{
 				ReplayWrapper sw = gw->GetGameEventAsReplay();
 				CameraWrapper flyCam = gw->GetCamera();
-				POV currentPov = flyCam.GetPOV();
 
 				CameraSnapshot snapshot;
 				snapshot.id = id;
@@ -545,9 +545,9 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 
 				currentPath.saves.erase(it);
 				snapshot.frame = sw.GetCurrentReplayFrame();
-				snapshot.location = currentPov.location;
-				snapshot.rotation = currentPov.rotation;
-				snapshot.FOV = currentPov.FOV;
+				snapshot.location = flyCam.GetLocation();
+				snapshot.rotation = flyCam.GetRotation();
+				snapshot.FOV = flyCam.GetFOV();
 				currentPath.saves.insert(std::make_pair(snapshot.timeStamp, snapshot));
 				cons->log("Updated snapshot with id " + to_string(id));
 				return;
@@ -565,12 +565,11 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		save.timeStamp = sw.GetReplayTimeElapsed();
 		CameraWrapper flyCam = gw->GetCamera();
 		
-		POV currentPov = flyCam.GetPOV();
 		save.id = current_id;
 		save.frame = sw.GetCurrentReplayFrame();
-		save.location = currentPov.location;
-		save.rotation = currentPov.rotation;
-		save.FOV = currentPov.FOV;
+		save.location = flyCam.GetLocation();
+		save.rotation = flyCam.GetRotation();
+		save.FOV = flyCam.GetFOV();
 		currentPath.saves.insert(std::make_pair(save.timeStamp, save));
 		AddKeyFrame(save.frame);
 		cons->log("Snapshot saved under id " + to_string(current_id));
@@ -579,6 +578,10 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 	else if (command.compare("dolly_deactivate") == 0)
 	{
 		cons->log("Dolly cam deactived");
+		CameraWrapper flyCam = gw->GetCamera();
+		if (!flyCam.GetCameraAsActor().IsNull()) {
+			flyCam.SetLockedFOV(false);
+		}
 		playbackActive = false;
 	}
 	else if (command.compare("dolly_activate") == 0)
@@ -640,6 +643,14 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		CameraWrapper flyCam = gw->GetCamera();
 		flyCam.SetFOV(fov);
 	}
+	else if (command.compare("dolly_drawpath_enable") == 0)
+	{
+		renderPath = true;
+	}
+	else if (command.compare("dolly_drawpath_disable") == 0)
+	{
+		renderPath = true;
+	}
 }
 
 void DollyCamPlugin::onLoad()
@@ -666,7 +677,35 @@ void DollyCamPlugin::onLoad()
 	cons->registerNotifier("dolly_cam_set_fov", videoPlugin_onCommand);
 	cons->registerNotifier("dolly_cam_set_time", videoPlugin_onCommand);
 
+	cons->registerNotifier("dolly_drawpath_enable", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_drawpath_disable", videoPlugin_onCommand);
+
 	cons->registerNotifier("dolly_interpmode", videoPlugin_onCommand);
+
+	/*gw->RegisterDrawable([](CanvasWrapper cw) {
+		if (!renderPath)
+			return;
+		if (currentPath.saves.size() < 2)
+			return;
+
+		auto it = currentPath.saves.begin();
+		while (it != --(currentPath.saves.end())) 
+		{
+			int id = it->second.id;
+			float ts = it->second.timeStamp;
+			Vector startLoc = it->second.location;
+			Vector startLocText = it->second.location + Vector(0, 0, 50);
+			Vector endLoc = (++it)->second.location;
+			Vector2 startProj = cw.Project(startLoc);
+			Vector2 startProjText = cw.Project(startLocText);
+			Vector2 endProj = cw.Project(endLoc);
+
+			cw.SetColor(255, 0, 0, 150);
+			cw.DrawLine(startProj, endProj);
+			cw.SetPosition(startProjText);
+			cw.DrawString("ID: " + to_string(id) + " @ " + to_string_with_precision(ts, 4));
+		}
+	});*/
 }
 
 void DollyCamPlugin::onUnload()
