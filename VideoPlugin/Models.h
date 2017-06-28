@@ -2,7 +2,8 @@
 #include "wrappers/wrapperstructs.h"
 #include <map>
 #include <memory>
-typedef std::map<float, CameraSnapshot> savetype;
+#define savetype std::map<float, CameraSnapshot>
+//typedef std::map<float, CameraSnapshot> savetype;
 
 enum InterpMode
 {

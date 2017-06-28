@@ -1,20 +1,18 @@
 #include "DollyCamPlugin.h"
 #include "helpers.h"
 #include <fstream>
-#include <cereal/types/unordered_map.hpp>
-#include <cereal/types/memory.hpp>
-#include <cereal/archives/binary.hpp>
-#include <cereal/archives/json.hpp>
+
 
 #include "Models.h"
 #include "calculations.h"
+#include "Serialization.h"
 
 BAKKESMOD_PLUGIN(DollyCamPlugin, "Dollycam plugin", "0.2", 0)
 
 //Known bug, cannot have path after goal if path started before goal
 GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
-std::unique_ptr<Path> currentPath(new Path());
+std::shared_ptr<Path> currentPath(new Path());
 
 static int current_id = 0;
 static byte interp_mode = 1;
@@ -38,14 +36,14 @@ long long playback() {
 	CameraSnapshot nextSave;
 	CameraSnapshot nextNextSave;
 	
-	if ((interp_mode == 0 && currentPath.saves.size() < 2) || (interp_mode == 1 && currentPath.saves.size() < 3)) //No frames, don't need to execute, need atleast 2 for linterp, 3 for bezier
+	if ((interp_mode == 0 && currentPath->saves->size() < 2) || (interp_mode == 1 && currentPath->saves->size() < 3)) //No frames, don't need to execute, need atleast 2 for linterp, 3 for bezier
 	{ 
 		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
 		firstFrame = true;
 		return 1.f;
 	}
 
-	if (currentPath.saves.begin()->first > replaySeconds || (--currentPath.saves.end())->first < replaySeconds) //Replay time doesn't have any snapshots
+	if (currentPath->saves->begin()->first > replaySeconds || (--currentPath->saves->end())->first < replaySeconds) //Replay time doesn't have any snapshots
 	{
 		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
 		firstFrame = true;
@@ -54,25 +52,17 @@ long long playback() {
 
 
 	
-	for (auto it = currentPath.saves.begin(); it != currentPath.saves.end(); it++)
+	for (auto it = currentPath->saves->begin(); it != currentPath->saves->end(); it++)
 	{
-		//if (it->first > replaySeconds && prevSave.timeStamp >= 0 && nextSave.timeStamp < 0) //why not ++ the it lol?
-		//{
-		//	nextSave = it->second;
-		//}
-		//else if (it->first > replaySeconds && nextSave.timeStamp >= 0) {
-		//	nextNextSave = it->second;
-		//	break;
-		//}
 
 
 		int it_incs = 0;
 		prevSave = it->second;
-		if (++it != currentPath.saves.end())
+		if (++it != currentPath->saves->end())
 		{
 			nextSave = it->second;
 			it_incs++;
-			if (++it != currentPath.saves.end())
+			if (++it != currentPath->saves->end())
 			{
 				nextNextSave = it->second;
 				it_incs++;
@@ -83,7 +73,7 @@ long long playback() {
 		if (prevSave.timeStamp <= replaySeconds && nextSave.timeStamp >= replaySeconds)
 		{
 			if (nextNextSave.timeStamp < 0 && interp_mode == 1) { //if there is no nextnext, just take last 3 items
-				it = (currentPath.saves.end());
+				it = (currentPath->saves->end());
 				nextNextSave = (--it)->second;
 				nextSave = (--it)->second;
 				prevSave = (--it)->second;
@@ -141,7 +131,7 @@ long long playback() {
 		Rotator snapR = Rotator(frameDiff);
 		Vector snap = Vector(frameDiff);
 		
-		fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
+		DollyCamCalculations::fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
 		
 		Vector newLoc; 
 		Rotator newRot;
@@ -163,11 +153,11 @@ long long playback() {
 			percElapsed = (timeElapsed / (nextNextSave.timeStamp - prevSave.timeStamp));
 			if (percElapsed > 1)
 				percElapsed = 1;
-			newLoc = quadraticBezierCurve(prevSave.location, nextSave.location, nextNextSave.location, percElapsed);
-			newRot.Pitch = calculateBezierParam(prevSave.rotation.Pitch, nextSave.rotation.Pitch, nextNextSave.rotation.Pitch, percElapsed);
-			newRot.Yaw = calculateBezierParam(prevSave.rotation.Yaw, nextSave.rotation.Yaw, nextNextSave.rotation.Yaw, percElapsed);
-			newRot.Roll = calculateBezierParam(prevSave.rotation.Roll, nextSave.rotation.Roll, nextNextSave.rotation.Roll, percElapsed);
-			newFOV = calculateBezierParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
+			newLoc = DollyCamCalculations::quadraticBezierCurve(prevSave.location, nextSave.location, nextNextSave.location, percElapsed);
+			newRot.Pitch = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Pitch, nextSave.rotation.Pitch, nextNextSave.rotation.Pitch, percElapsed);
+			newRot.Yaw = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Yaw, nextSave.rotation.Yaw, nextNextSave.rotation.Yaw, percElapsed);
+			newRot.Roll = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Roll, nextSave.rotation.Roll, nextNextSave.rotation.Roll, percElapsed);
+			newFOV = DollyCamCalculations::calculateBezierParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
 			break;
 		}
 		
@@ -222,14 +212,14 @@ void dolly_onAllCommand(std::vector<std::string> params)
 		try {
 			{
 				currentPath->saves->clear();
-				std::ifstream ifs("./bakkesmod/data/campaths/" + filename + ".json");  // Output file stream.
-				cereal::JSONInputArchive  iarchive(ifs); // Choose binary format, writingdirection.
-				iarchive(CEREAL_NVP(currentPath)); //oarchive(saves); // Save the modified instance.
+				std::ifstream ifs("./bakkesmod/data/campaths/" + filename + ".json"); 
+				cereal::JSONInputArchive  iarchive(ifs); 
+				iarchive(CEREAL_NVP(currentPath)); 
 			}
 
 			current_id = 0;
 			//need to get the highest ID in the loaded path so we don't get ID collisions, doesn't work to just take the count
-			for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
+			for (savetype::const_iterator it = currentPath->saves->cbegin(); it != currentPath->saves->cend() /* not hoisted */; /* no increment */)
 			{
 				if (it->second.id >= current_id)
 				{
@@ -237,7 +227,7 @@ void dolly_onAllCommand(std::vector<std::string> params)
 				}
 				it++;
 			}
-			cons->log("Loaded " + filename + ".json with " + to_string(currentPath.saves.size()) + " snapshots. current_id is " + to_string(current_id));
+			cons->log("Loaded " + filename + ".json with " + to_string(currentPath->saves->size()) + " snapshots. current_id is " + to_string(current_id));
 		}
 		catch (exception e) {
 			cons->log("Could not load campath, invalid json format?");
@@ -252,14 +242,14 @@ void dolly_onAllCommand(std::vector<std::string> params)
 
 		{
 			string filename = params.at(1);
-			std::ofstream ofs("./bakkesmod/data/campaths/" + filename + ".json", std::ios::out | std::ios::trunc);  // Output file stream.
-			cereal::JSONOutputArchive  oarchive(ofs); // Choose binary format, writingdirection.
-			oarchive(CEREAL_NVP(currentPath)); //oarchive(saves); // Save the modified instance.
+			std::ofstream ofs("./bakkesmod/data/campaths/" + filename + ".json", std::ios::out | std::ios::trunc); 
+			cereal::JSONOutputArchive  oarchive(ofs); 
+			oarchive(CEREAL_NVP(currentPath)); 
 		}
 	}
 	else if (command.compare("dolly_path_clear") == 0)
 	{
-		currentPath.saves.clear();
+		currentPath->saves->clear();
 	}
 	else if (command.compare("dolly_interpmode") == 0)
 	{
@@ -277,11 +267,11 @@ void dolly_onAllCommand(std::vector<std::string> params)
 			return;
 		}
 		int id = get_safe_int(params.at(1));
-		for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
+		for (savetype::const_iterator it = currentPath->saves->cbegin(); it != currentPath->saves->cend() /* not hoisted */; /* no increment */)
 		{
 			if (it->second.id == id)
 			{
-				currentPath.saves.erase(it);
+				currentPath->saves->erase(it);
 				cons->log("Removed snapshot with id " + params.at(1));
 				return;
 			}
@@ -294,12 +284,12 @@ void dolly_onAllCommand(std::vector<std::string> params)
 	}
 	else if (command.compare("dolly_snapshot_list") == 0)
 	{
-		for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
+		for (savetype::const_iterator it = currentPath->saves->cbegin(); it != currentPath->saves->cend() /* not hoisted */; /* no increment */)
 		{
 			cons->log("ID: " + to_string(it->second.id) + ", [" + to_string_with_precision(it->second.timeStamp, 2) + "][" + to_string_with_precision(it->second.FOV, 2) + "] (" + vector_to_string(it->second.location) + ") (" + rotator_to_string(it->second.rotation) + " )");
 			++it;
 		}
-		cons->log("Current path has " + to_string(currentPath.saves.size()) + " snapshots.");
+		cons->log("Current path has " + to_string(currentPath->saves->size()) + " snapshots.");
 	}
 	else if (command.compare("dolly_snapshot_info") == 0)
 	{
@@ -309,7 +299,8 @@ void dolly_onAllCommand(std::vector<std::string> params)
 		}
 
 		int id = get_safe_int(params.at(1));
-		for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
+		
+		for (savetype::const_iterator it = currentPath->saves->cbegin(); it != currentPath->saves->cend() /* not hoisted */; /* no increment */)
 		{
 			if (it->second.id == id)
 			{
@@ -375,7 +366,7 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 		}
 
 		int id = get_safe_int(params.at(1));
-		for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
+		for (auto it = currentPath->saves->cbegin(); it != currentPath->saves->cend() /* not hoisted */; /* no increment */)
 		{
 			if (it->second.id == id)
 			{
@@ -386,12 +377,12 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 				snapshot.id = id;
 				snapshot.timeStamp = it->second.timeStamp;
 
-				currentPath.saves.erase(it);
+				currentPath->saves->erase(it);
 				snapshot.frame = sw.GetCurrentReplayFrame();
 				snapshot.location = flyCam.GetLocation();
 				snapshot.rotation = flyCam.GetRotation();
 				snapshot.FOV = flyCam.GetFOV();
-				currentPath.saves.insert(std::make_pair(snapshot.timeStamp, snapshot));
+				currentPath->saves->insert(std::make_pair(snapshot.timeStamp, snapshot));
 				cons->log("Updated snapshot with id " + to_string(id));
 				return;
 			}
@@ -413,8 +404,8 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 		save.location = flyCam.GetLocation();
 		save.rotation = flyCam.GetRotation();
 		save.FOV = flyCam.GetFOV();
-		currentPath.saves.insert(std::make_pair(save.timeStamp, save));
-		AddKeyFrame(save.frame);
+		currentPath->saves->insert(std::make_pair(save.timeStamp, save));
+		//AddKeyFrame(save.frame);
 		cons->log("Snapshot saved under id " + to_string(current_id));
 		current_id++;
 	}
@@ -501,9 +492,10 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 		{
 			times = get_safe_int(params.at(1));
 		}
-		cons->log("Applying chaikin " + to_string(times) + " times");
-		for (unsigned int i = 0; i < abs(times); i++) {
-			apply_chaikin();
+		cons->log("Applying chaikin " + to_string(abs(times)) + " times");
+		for (unsigned int i = 0; i < abs(times); i++) 
+		{
+			DollyCamCalculations::apply_chaikin(currentPath);
 		}
 	}
 }
@@ -541,17 +533,17 @@ void DollyCamPlugin::onLoad()
 	/*gw->RegisterDrawable([](CanvasWrapper cw) {
 		if (!renderPath)
 			return;
-		if (currentPath.saves.size() < 2)
+		if (currentPath->saves->size() < 2)
 			return;
 
-		auto it = currentPath.saves.begin();
-		while (it != --(currentPath.saves.end())) 
+		auto it = currentPath->saves->begin();
+		while (it != --(currentPath->saves->end())) 
 		{
-			int id = it->second.id;
-			float ts = it->second.timeStamp;
-			Vector startLoc = it->second.location;
-			Vector startLocText = it->second.location + Vector(0, 0, 50);
-			Vector endLoc = (++it)->second.location;
+			int id = it->second->id;
+			float ts = it->second->timeStamp;
+			Vector startLoc = it->second->location;
+			Vector startLocText = it->second->location + Vector(0, 0, 50);
+			Vector endLoc = (++it)->second->location;
 			Vector2 startProj = cw.Project(startLoc);
 			Vector2 startProjText = cw.Project(startLocText);
 			Vector2 endProj = cw.Project(endLoc);
