@@ -119,10 +119,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="calculations.h" />
     <ClInclude Include="DollyCamPlugin.h" />
+    <ClInclude Include="Models.h" />
+    <ClInclude Include="Serialization.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="calculations.cpp" />
     <ClCompile Include="DollyCamPlugin.cpp" />
+    <ClCompile Include="Models.cpp" />
+    <ClCompile Include="Serialization.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

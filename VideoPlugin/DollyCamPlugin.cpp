@@ -1,5 +1,4 @@
 #include "DollyCamPlugin.h"
-#include <map>
 #include "helpers.h"
 #include <fstream>
 #include <cereal/types/unordered_map.hpp>
@@ -7,99 +6,23 @@
 #include <cereal/archives/binary.hpp>
 #include <cereal/archives/json.hpp>
 
-BAKKESMOD_PLUGIN(DollyCamPlugin, "Dollycam plugin", "0.2", 0)
+#include "Models.h"
+#include "calculations.h"
 
+BAKKESMOD_PLUGIN(DollyCamPlugin, "Dollycam plugin", "0.2", 0)
 
 //Known bug, cannot have path after goal if path started before goal
 GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
+std::unique_ptr<Path> currentPath(new Path());
 
 static int current_id = 0;
-static byte interp_mode = 3;
+static byte interp_mode = 1;
 static bool renderPath = false;
-
-enum InterpMode
-{
-	Linear = 0,
-	QuadraticBezier = 1,
-	RationalBezier = 2,
-	Chaikin = 3,
-};
-
-template <class Archive>
-void serialize(Archive & ar, Vector & vector)
-{
-	ar(CEREAL_NVP(vector.X), CEREAL_NVP(vector.Y), CEREAL_NVP(vector.Z));
-}
-
-template <class Archive>
-void serialize(Archive & ar, Rotator & rotator)
-{
-	ar(CEREAL_NVP(rotator.Pitch), CEREAL_NVP(rotator.Yaw), CEREAL_NVP(rotator.Roll));
-}
-
-struct CameraSnapshot {
-	int id;
-	float timeStamp;
-	int frame;
-	Vector location;
-	Rotator rotation;
-	float FOV;
-
-	CameraSnapshot() {}
-	template <class Archive>
-	void serialize(Archive & ar)
-	{
-		ar(CEREAL_NVP(id), CEREAL_NVP(timeStamp), CEREAL_NVP(frame));
-		ar(CEREAL_NVP(location));
-		ar(CEREAL_NVP(rotation));
-		ar(CEREAL_NVP(FOV));
-	}
-};
-
-struct Path {
-	std::map<float, CameraSnapshot> saves;
-
-	Path() {}
-
-	template <class Archive>
-	void serialize(Archive & ar)
-	{
-		ar(CEREAL_NVP(saves));
-	}
-};
-
-string vector_to_string(Vector v) {
-	return to_string_with_precision(v.X, 2) + ", " + to_string_with_precision(v.Y, 2) + ", " + to_string_with_precision(v.Z, 2);
-}
-
-string rotator_to_string(Rotator r) {
-	return to_string_with_precision(r.Pitch, 2) + ", " + to_string_with_precision(r.Yaw, 2) + ", " + to_string_with_precision(r.Roll, 2);
-}
-
-float calculateParam(float x0, float x1, float x2, float t) {
-	return pow(1 - t, 2) * x0 + 2 * t*(1 - t)*x1 + pow(t, 2)*x2;
-}
-
-Vector quadraticBezierCurve(Vector p0, Vector p1, Vector p2, float t) {
-	return{
-		calculateParam(p0.X, p1.X, p2.X, t) ,
-		calculateParam(p0.Y, p1.Y, p2.Y, t) ,
-		calculateParam(p0.Z, p1.Z, p2.Z, t)
-	};
-}
 
 ofstream camlog;
 
-template <typename T>
-T closest(T num, T one, T two) 
-{
-	return abs(num - one) < abs(num - two) ? two : one;
-}
-
-Path currentPath;
 bool playbackActive = false;
-
 bool firstFrame = false;
 int lastGenBezierId = -1;
 
@@ -218,89 +141,8 @@ long long playback() {
 		Rotator snapR = Rotator(frameDiff);
 		Vector snap = Vector(frameDiff);
 		
-		if (prevSave.rotation.Yaw < 0) 
-		{
-			if (nextSave.rotation.Yaw > 0 && nextSave.rotation.Yaw - prevSave.rotation.Yaw > 32768)
-			{
-				nextSave.rotation.Yaw -= 32768 * 2;
-			}
-			if (nextNextSave.rotation.Yaw > 0 && nextNextSave.rotation.Yaw - prevSave.rotation.Yaw > 32768)
-			{
-				nextNextSave.rotation.Yaw -= 32768 * 2;
-			}
-		}
-		else if (prevSave.rotation.Yaw > 0) {
-			if (nextSave.rotation.Yaw < 0 && prevSave.rotation.Yaw - nextSave.rotation.Yaw > 32768)
-			{
-				nextSave.rotation.Yaw += 32768 * 2;
-			}
-			if (nextNextSave.rotation.Yaw < 0 && prevSave.rotation.Yaw - nextNextSave.rotation.Yaw > 32768)
-			{
-				nextNextSave.rotation.Yaw += 32768 * 2;
-			}
-		}
-		if (prevSave.rotation.Roll < 0) 
-		{
-			if (nextSave.rotation.Roll > 0 && prevSave.rotation.Roll - nextSave.rotation.Roll > 32768)
-			{
-				nextSave.rotation.Roll -= 32768 * 2;
-			}
-			if (nextNextSave.rotation.Roll > 0 && nextNextSave.rotation.Roll - prevSave.rotation.Roll > 32768) 
-			{
-				nextNextSave.rotation.Roll -= 32768 * 2;
-			}
-		}
-		else if (prevSave.rotation.Roll > 0) 
-		{
-			if (nextSave.rotation.Roll < 0 && prevSave.rotation.Roll - nextSave.rotation.Roll > 32768)
-			{
-				nextSave.rotation.Roll += 32768 * 2;
-			}
-			if (nextNextSave.rotation.Roll < 0 && prevSave.rotation.Roll - nextNextSave.rotation.Roll > 32768) 
-			{
-				nextNextSave.rotation.Roll += 32768 * 2;
-			}
-		}
-		if (prevSave.rotation.Pitch < 0) 
-		{
-			if (nextSave.rotation.Pitch > 0 && prevSave.rotation.Pitch - nextSave.rotation.Pitch > 16364)
-			{
-				nextSave.rotation.Pitch -= 16364 * 2;
-			}
-			if (nextNextSave.rotation.Pitch > 0 && nextNextSave.rotation.Pitch - prevSave.rotation.Pitch > 16364)
-			{
-				nextNextSave.rotation.Pitch -= 16364 * 2;
-			}
-		}
-		else if (prevSave.rotation.Pitch > 0) 
-		{
-			if (nextSave.rotation.Pitch < 0 && prevSave.rotation.Pitch - nextSave.rotation.Pitch > 16364)
-			{
-				nextSave.rotation.Pitch += 16364 * 2;
-			}
-			if (nextNextSave.rotation.Pitch < 0 && prevSave.rotation.Pitch - nextNextSave.rotation.Pitch > 16364)
-			{
-				nextNextSave.rotation.Pitch += 16364 * 2;
-			}
-		}
+		fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
 		
-		
-
-		/*if (prevSave.rotation.Roll < -32768 / 2 && nextSave.rotation.Roll > 32768 / 2) {
-			nextSave.rotation.Roll -= 32768 * 2;
-		}
-		if (prevSave.rotation.Roll > 32768 / 2 && nextSave.rotation.Roll < -32768 / 2) {
-			nextSave.rotation.Roll += 32768 * 2;
-		}
-
-		if (prevSave.rotation.Pitch < -16364 / 2 && nextSave.rotation.Pitch > 16364 / 2) {
-			nextSave.rotation.Pitch -= 16364 * 2;
-		}
-		if (prevSave.rotation.Pitch > 16364 / 2 && nextSave.rotation.Pitch < -16364 / 2) {
-			nextSave.rotation.Pitch += 16364 * 2;
-		}*/
-
-
 		Vector newLoc; 
 		Rotator newRot;
 		float newFOV = 0;
@@ -322,10 +164,10 @@ long long playback() {
 			if (percElapsed > 1)
 				percElapsed = 1;
 			newLoc = quadraticBezierCurve(prevSave.location, nextSave.location, nextNextSave.location, percElapsed);
-			newRot.Pitch = calculateParam(prevSave.rotation.Pitch, nextSave.rotation.Pitch, nextNextSave.rotation.Pitch, percElapsed);
-			newRot.Yaw = calculateParam(prevSave.rotation.Yaw, nextSave.rotation.Yaw, nextNextSave.rotation.Yaw, percElapsed);
-			newRot.Roll = calculateParam(prevSave.rotation.Roll, nextSave.rotation.Roll, nextNextSave.rotation.Roll, percElapsed);
-			newFOV = calculateParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
+			newRot.Pitch = calculateBezierParam(prevSave.rotation.Pitch, nextSave.rotation.Pitch, nextNextSave.rotation.Pitch, percElapsed);
+			newRot.Yaw = calculateBezierParam(prevSave.rotation.Yaw, nextSave.rotation.Yaw, nextNextSave.rotation.Yaw, percElapsed);
+			newRot.Roll = calculateBezierParam(prevSave.rotation.Roll, nextSave.rotation.Roll, nextNextSave.rotation.Roll, percElapsed);
+			newFOV = calculateBezierParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
 			break;
 		}
 		
@@ -347,23 +189,6 @@ long long playback() {
 	return 1.f;
 }
 
-void AddKeyFrame(int frame) 
-{
-	return;
-	if (!gw->IsInReplay())
-		return;
-	ReplayWrapper sw = gw->GetGameEventAsReplay();
-	sw.AddKeyFrame(frame, "Team0Joined");
-}
-
-void RemoveKeyFrame(int frame) {
-	return;
-	if (!gw->IsInReplay())
-		return;
-	ReplayWrapper sw = gw->GetGameEventAsReplay();
-	sw.RemoveKeyFrame(frame);
-}
-
 void run_playback() {
 	if (!gw->IsInReplay() || !playbackActive) 
 	{
@@ -376,58 +201,27 @@ void run_playback() {
 	}, playback());
 }
 
-void apply_chaikin() {
-	std::map<float, CameraSnapshot> newPath;
-	newPath.insert(std::make_pair(currentPath.saves.begin()->second.timeStamp, currentPath.saves.begin()->second));
-	auto it = currentPath.saves.begin();
-	while (it != (--currentPath.saves.end()))
-	{
-		CameraSnapshot currentSnapshot = (it->second);
-		CameraSnapshot nextSnapshot = ((++it)->second);
-		currentSnapshot.id *= 4;
-		CameraSnapshot q1 = currentSnapshot;
-		q1.id += 1;
-		q1.location = currentSnapshot.location * .75 + nextSnapshot.location * .25;
-		q1.rotation = currentSnapshot.rotation * .75 + nextSnapshot.rotation * .25;
-		q1.FOV = currentSnapshot.FOV * .75 + nextSnapshot.FOV * .25;
-		q1.timeStamp = currentSnapshot.timeStamp + ((nextSnapshot.timeStamp - currentSnapshot.timeStamp) * .25);
 
-		CameraSnapshot q2 = currentSnapshot;
-		q2.id += 2;
-		q2.location = currentSnapshot.location * .25 + nextSnapshot.location * .75;
-		q2.rotation = currentSnapshot.rotation * .25 + nextSnapshot.rotation * .75;
-		q2.FOV = currentSnapshot.FOV * .25 + nextSnapshot.FOV * .75;
-		q2.timeStamp = currentSnapshot.timeStamp + ((nextSnapshot.timeStamp - currentSnapshot.timeStamp) * .75);
-		newPath.insert(std::make_pair(q1.timeStamp, q1));
-		newPath.insert(std::make_pair(q2.timeStamp, q2));
-	}
-
-
-	
-	currentPath.saves = newPath;
-}
-
-void videoPlugin_onCommand(std::vector<std::string> params)
+void dolly_onAllCommand(std::vector<std::string> params) 
 {
 	string command = params.at(0);
-
 	if (command.compare("dolly_path_load") == 0)
 	{
-		if (params.size() < 2) 
+		if (params.size() < 2)
 		{
 			cons->log("Usage: " + params.at(0) + " filename");
 			return;
 		}
 		camlog.open("camlog.txt");
 		string filename = params.at(1);
-		if (!file_exists("./bakkesmod/data/campaths/" + filename + ".json")) 
+		if (!file_exists("./bakkesmod/data/campaths/" + filename + ".json"))
 		{
 			cons->log("Campath " + filename + ".json does not exist");
 			return;
 		}
 		try {
 			{
-				currentPath.saves.clear();
+				currentPath->saves->clear();
 				std::ifstream ifs("./bakkesmod/data/campaths/" + filename + ".json");  // Output file stream.
 				cereal::JSONInputArchive  iarchive(ifs); // Choose binary format, writingdirection.
 				iarchive(CEREAL_NVP(currentPath)); //oarchive(saves); // Save the modified instance.
@@ -437,7 +231,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			//need to get the highest ID in the loaded path so we don't get ID collisions, doesn't work to just take the count
 			for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
 			{
-				if (it->second.id >= current_id) 
+				if (it->second.id >= current_id)
 				{
 					current_id = it->second.id + 1;
 				}
@@ -449,7 +243,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			cons->log("Could not load campath, invalid json format?");
 		}
 	}
-	else if (command.compare("dolly_path_save") == 0) 
+	else if (command.compare("dolly_path_save") == 0)
 	{
 		if (params.size() < 2) {
 			cons->log("Usage: " + params.at(0) + " filename");
@@ -467,7 +261,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 	{
 		currentPath.saves.clear();
 	}
-	else if (command.compare("dolly_interpmode") == 0) 
+	else if (command.compare("dolly_interpmode") == 0)
 	{
 		if (params.size() < 2) {
 			cons->log("Current dolly interp mode is " + to_string(interp_mode));
@@ -475,7 +269,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			return;
 		}
 		interp_mode = get_safe_int(params.at(1));
-	} 
+	}
 	else if (command.compare("dolly_snapshot_delete") == 0)
 	{
 		if (params.size() < 2) {
@@ -512,8 +306,8 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		if (params.size() < 2) {
 			cons->log("Usage: " + params.at(0) + " id");
 			return;
-		} 
-		
+		}
+
 		int id = get_safe_int(params.at(1));
 		for (auto it = currentPath.saves.cbegin(); it != currentPath.saves.cend() /* not hoisted */; /* no increment */)
 		{
@@ -539,12 +333,17 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			}
 		}
 	}
-	else if (!gw->IsInReplay()) 
+}
+
+void dolly_onReplayCommand(std::vector<std::string> params)
+{
+	string command = params.at(0);
+	if (!gw->IsInReplay())
 	{
 		cons->log("You need to be watching a replay to execute this command");
 		return;
 	}
-	else if (command.compare("dolly_cam_show") == 0)
+	if (command.compare("dolly_cam_show") == 0)
 	{
 		CameraWrapper cam = gw->GetCamera();
 		auto location = cam.GetLocation();
@@ -553,7 +352,17 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 		cons->log("FOV: " + to_string_with_precision(cam.GetFOV(), 5));
 		cons->log("Location " + vector_to_string(location));
 		cons->log("Rotation " + rotator_to_string(rotation));
-	} 
+	}
+}
+
+void dolly_onFlyCamCommand(std::vector<std::string> params)
+{
+	string command = params.at(0);
+	if (!gw->IsInReplay())
+	{
+		cons->log("You need to be watching a replay to execute this command");
+		return;
+	}
 	else if (gw->GetCamera().GetCameraState().compare("CameraState_ReplayFly_TA") != 0) 
 	{
 		cons->log("You need to be in fly camera mode to use this command");
@@ -688,9 +497,11 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 	else if (command.compare("dolly_interp_chaikin") == 0)
 	{
 		int times = 1;
-		if (params.size() == 2) {
+		if (params.size() == 2) 
+		{
 			times = get_safe_int(params.at(1));
 		}
+		cons->log("Applying chaikin " + to_string(times) + " times");
 		for (unsigned int i = 0; i < abs(times); i++) {
 			apply_chaikin();
 		}
@@ -702,30 +513,31 @@ void DollyCamPlugin::onLoad()
 	gw = gameWrapper;
 	cons = console;
 
-	cons->registerNotifier("dolly_snapshot_take", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_snapshot_list", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_snapshot_info", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_snapshot_override", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_snapshot_delete", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_snapshot_take", dolly_onFlyCamCommand);
+	cons->registerNotifier("dolly_snapshot_override", dolly_onFlyCamCommand);
 
-	cons->registerNotifier("dolly_activate", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_deactivate", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_snapshot_list", dolly_onAllCommand);
+	cons->registerNotifier("dolly_snapshot_info", dolly_onAllCommand);
+	cons->registerNotifier("dolly_snapshot_delete", dolly_onAllCommand);
 
-	cons->registerNotifier("dolly_path_save", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_path_load", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_path_clear", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_activate", dolly_onFlyCamCommand);
+	cons->registerNotifier("dolly_deactivate", dolly_onFlyCamCommand);
 
-	cons->registerNotifier("dolly_cam_show", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_cam_set_location", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_cam_set_rotation", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_cam_set_fov", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_cam_set_time", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_path_save", dolly_onAllCommand);
+	cons->registerNotifier("dolly_path_load", dolly_onAllCommand);
+	cons->registerNotifier("dolly_path_clear", dolly_onAllCommand);
 
-	cons->registerNotifier("dolly_drawpath_enable", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_drawpath_disable", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_cam_show", dolly_onReplayCommand);
+	cons->registerNotifier("dolly_cam_set_location", dolly_onFlyCamCommand);
+	cons->registerNotifier("dolly_cam_set_rotation", dolly_onFlyCamCommand);
+	cons->registerNotifier("dolly_cam_set_fov", dolly_onFlyCamCommand);
+	cons->registerNotifier("dolly_cam_set_time", dolly_onFlyCamCommand);
 
-	cons->registerNotifier("dolly_interpmode", videoPlugin_onCommand);
-	cons->registerNotifier("dolly_interp_chaikin", videoPlugin_onCommand);
+	cons->registerNotifier("dolly_drawpath_enable", dolly_onFlyCamCommand);
+	cons->registerNotifier("dolly_drawpath_disable", dolly_onFlyCamCommand);
+
+	cons->registerNotifier("dolly_interpmode", dolly_onAllCommand);
+	cons->registerNotifier("dolly_interp_chaikin", dolly_onFlyCamCommand);
 	/*gw->RegisterDrawable([](CanvasWrapper cw) {
 		if (!renderPath)
 			return;
