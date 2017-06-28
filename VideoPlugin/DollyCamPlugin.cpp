@@ -15,14 +15,15 @@ GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
 
 static int current_id = 0;
-static byte interp_mode = 1;
+static byte interp_mode = 3;
 static bool renderPath = false;
 
 enum InterpMode
 {
 	Linear = 0,
 	QuadraticBezier = 1,
-	RationalBezier = 2
+	RationalBezier = 2,
+	Chaikin = 3,
 };
 
 template <class Archive>
@@ -88,7 +89,7 @@ Vector quadraticBezierCurve(Vector p0, Vector p1, Vector p2, float t) {
 	};
 }
 
-//ofstream camlog;
+ofstream camlog;
 
 template <typename T>
 T closest(T num, T one, T two) 
@@ -178,6 +179,8 @@ long long playback() {
 					usedSave.rotation = gw->GetCamera().GetRotation();
 					usedSave.FOV = gw->GetCamera().GetFOV();
 					prevSave = usedSave;
+				}
+				else {
 				}
 				lastGenBezierId = prevSave.id;
 			}
@@ -373,6 +376,37 @@ void run_playback() {
 	}, playback());
 }
 
+void apply_chaikin() {
+	std::map<float, CameraSnapshot> newPath;
+	newPath.insert(std::make_pair(currentPath.saves.begin()->second.timeStamp, currentPath.saves.begin()->second));
+	auto it = currentPath.saves.begin();
+	while (it != (--currentPath.saves.end()))
+	{
+		CameraSnapshot currentSnapshot = (it->second);
+		CameraSnapshot nextSnapshot = ((++it)->second);
+		currentSnapshot.id *= 4;
+		CameraSnapshot q1 = currentSnapshot;
+		q1.id += 1;
+		q1.location = currentSnapshot.location * .75 + nextSnapshot.location * .25;
+		q1.rotation = currentSnapshot.rotation * .75 + nextSnapshot.rotation * .25;
+		q1.FOV = currentSnapshot.FOV * .75 + nextSnapshot.FOV * .25;
+		q1.timeStamp = currentSnapshot.timeStamp + ((nextSnapshot.timeStamp - currentSnapshot.timeStamp) * .25);
+
+		CameraSnapshot q2 = currentSnapshot;
+		q2.id += 2;
+		q2.location = currentSnapshot.location * .25 + nextSnapshot.location * .75;
+		q2.rotation = currentSnapshot.rotation * .25 + nextSnapshot.rotation * .75;
+		q2.FOV = currentSnapshot.FOV * .25 + nextSnapshot.FOV * .75;
+		q2.timeStamp = currentSnapshot.timeStamp + ((nextSnapshot.timeStamp - currentSnapshot.timeStamp) * .75);
+		newPath.insert(std::make_pair(q1.timeStamp, q1));
+		newPath.insert(std::make_pair(q2.timeStamp, q2));
+	}
+
+
+	
+	currentPath.saves = newPath;
+}
+
 void videoPlugin_onCommand(std::vector<std::string> params)
 {
 	string command = params.at(0);
@@ -384,7 +418,7 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 			cons->log("Usage: " + params.at(0) + " filename");
 			return;
 		}
-		//camlog.open("camlog.txt");
+		camlog.open("camlog.txt");
 		string filename = params.at(1);
 		if (!file_exists("./bakkesmod/data/campaths/" + filename + ".json")) 
 		{
@@ -651,6 +685,16 @@ void videoPlugin_onCommand(std::vector<std::string> params)
 	{
 		renderPath = true;
 	}
+	else if (command.compare("dolly_interp_chaikin") == 0)
+	{
+		int times = 1;
+		if (params.size() == 2) {
+			times = get_safe_int(params.at(1));
+		}
+		for (unsigned int i = 0; i < abs(times); i++) {
+			apply_chaikin();
+		}
+	}
 }
 
 void DollyCamPlugin::onLoad()
@@ -681,7 +725,7 @@ void DollyCamPlugin::onLoad()
 	cons->registerNotifier("dolly_drawpath_disable", videoPlugin_onCommand);
 
 	cons->registerNotifier("dolly_interpmode", videoPlugin_onCommand);
-
+	cons->registerNotifier("dolly_interp_chaikin", videoPlugin_onCommand);
 	/*gw->RegisterDrawable([](CanvasWrapper cw) {
 		if (!renderPath)
 			return;
