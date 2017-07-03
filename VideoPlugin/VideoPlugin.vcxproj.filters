@@ -27,6 +27,12 @@
     <ClInclude Include="calculations.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="IGameApplier.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Playbacker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="DollyCamPlugin.cpp">
@@ -39,6 +45,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="calculations.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IGameApplier.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Playbacker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -1,179 +1,46 @@
 #include "DollyCamPlugin.h"
 #include "helpers.h"
-#include <fstream>
 
 
+#include "Playbacker.h"
 #include "Models.h"
 #include "calculations.h"
 #include "Serialization.h"
+#include "IGameApplier.h"
+
 
 BAKKESMOD_PLUGIN(DollyCamPlugin, "Dollycam plugin", "0.2", 0)
 
 //Known bug, cannot have path after goal if path started before goal
 GameWrapper* gw = NULL;
 ConsoleWrapper* cons = NULL;
-std::shared_ptr<Path> currentPath(new Path());
 
-static int current_id = 0;
-static byte interp_mode = 1;
-static bool renderPath = false;
+extern std::shared_ptr<Path> currentPath;
+extern IGameApplier* gameApplier;
 
-ofstream camlog;
+extern int current_id;
+extern byte interp_mode;
+extern bool renderPath;
 
-bool playbackActive = false;
-bool firstFrame = false;
-int lastGenBezierId = -1;
 
-CameraSnapshot usedSave;
+extern bool playbackActive;
+extern bool firstFrame;
+extern int previousID;
+extern savetype::iterator currentSnapshotIter;
+
+
 long long playback() {
 	ReplayWrapper sw = gw->GetGameEventAsReplay();
 
 	float replaySeconds = sw.GetReplayTimeElapsed(); //replay seconds are at 30 tickrate? so only updated once every 1/30 s
 	float currentTimeInMs = sw.GetSecondsElapsed();
-	
-
-	CameraSnapshot prevSave;
-	CameraSnapshot nextSave;
-	CameraSnapshot nextNextSave;
-	
-	if ((interp_mode == 0 && currentPath->saves->size() < 2) || (interp_mode == 1 && currentPath->saves->size() < 3)) //No frames, don't need to execute, need atleast 2 for linterp, 3 for bezier
-	{ 
-		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
-		firstFrame = true;
-		return 1.f;
-	}
-
-	if (currentPath->saves->begin()->first > replaySeconds || (--currentPath->saves->end())->first < replaySeconds) //Replay time doesn't have any snapshots
+	if ((interp_mode == Linear && currentPath->saves->size() < 2) || (interp_mode == QuadraticBezier && currentPath->saves->size() < 3) || !apply_frame(replaySeconds, currentTimeInMs))
 	{
 		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
-		firstFrame = true;
-		return 1.f;
 	}
-
-
-	
-	for (auto it = currentPath->saves->begin(); it != currentPath->saves->end(); it++)
+	else 
 	{
 
-
-		int it_incs = 0;
-		prevSave = it->second;
-		if (++it != currentPath->saves->end())
-		{
-			nextSave = it->second;
-			it_incs++;
-			if (++it != currentPath->saves->end())
-			{
-				nextNextSave = it->second;
-				it_incs++;
-			}
-		}
-
-		
-		if (prevSave.timeStamp <= replaySeconds && nextSave.timeStamp >= replaySeconds)
-		{
-			if (nextNextSave.timeStamp < 0 && interp_mode == 1) { //if there is no nextnext, just take last 3 items
-				it = (currentPath->saves->end());
-				nextNextSave = (--it)->second;
-				nextSave = (--it)->second;
-				prevSave = (--it)->second;
-				it_incs = 0;
-			}
-			if (lastGenBezierId != prevSave.id)
-			{
-				for (int i = 0; i < it_incs; i++)
-				{
-					--it;
-				}
-				usedSave = it->second;
-				if (!firstFrame) 
-				{
-					usedSave.location = gw->GetCamera().GetLocation();
-					usedSave.rotation = gw->GetCamera().GetRotation();
-					usedSave.FOV = gw->GetCamera().GetFOV();
-					prevSave = usedSave;
-				}
-				else {
-				}
-				lastGenBezierId = prevSave.id;
-			}
-			break;
-		}
-		else {
-			prevSave.timeStamp = -1;
-			nextSave.timeStamp = -1;
-			nextNextSave.timeStamp = -1;
-			for (int i = 0; i < it_incs; i++) 
-			{
-				--it;
-			}
-		}
-
-	}
-
-	
-
-	if (nextSave.timeStamp >= 0 && prevSave.timeStamp >= 0)
-	{
-		prevSave = usedSave;
-		if (firstFrame) 
-		{
-
-			gw->GetCamera().SetLocation(prevSave.location);
-			gw->GetCamera().SetRotation(prevSave.rotation);
-			gw->GetCamera().SetFOV(prevSave.FOV);
-			firstFrame = false;
-		}
-
-		float frameDiff = nextSave.timeStamp - prevSave.timeStamp;
-		float timeElapsed = currentTimeInMs - prevSave.timeStamp;
-
-		Rotator snapR = Rotator(frameDiff);
-		Vector snap = Vector(frameDiff);
-		
-		DollyCamCalculations::fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
-		
-		Vector newLoc; 
-		Rotator newRot;
-		float newFOV = 0;
-		float percElapsed = 0;
-
-		switch (interp_mode) {
-		case Linear:
-			percElapsed = timeElapsed / frameDiff;
-			newLoc = prevSave.location + ((nextSave.location - prevSave.location) * timeElapsed) / snap;
-			newRot.Pitch = prevSave.rotation.Pitch + ((nextSave.rotation.Pitch - prevSave.rotation.Pitch) * percElapsed);
-			newRot.Yaw = prevSave.rotation.Yaw + ((nextSave.rotation.Yaw - prevSave.rotation.Yaw) * percElapsed);
-			newRot.Roll = prevSave.rotation.Roll + ((nextSave.rotation.Roll - prevSave.rotation.Roll) * percElapsed);
-			newFOV = prevSave.FOV + ((nextSave.FOV - prevSave.FOV) * percElapsed);
-			break;
-		case QuadraticBezier:
-			if (timeElapsed < 0.0001)
-				timeElapsed = 0.0001;
-			percElapsed = (timeElapsed / (nextNextSave.timeStamp - prevSave.timeStamp));
-			if (percElapsed > 1)
-				percElapsed = 1;
-			newLoc = DollyCamCalculations::quadraticBezierCurve(prevSave.location, nextSave.location, nextNextSave.location, percElapsed);
-			newRot.Pitch = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Pitch, nextSave.rotation.Pitch, nextNextSave.rotation.Pitch, percElapsed);
-			newRot.Yaw = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Yaw, nextSave.rotation.Yaw, nextNextSave.rotation.Yaw, percElapsed);
-			newRot.Roll = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Roll, nextSave.rotation.Roll, nextNextSave.rotation.Roll, percElapsed);
-			newFOV = DollyCamCalculations::calculateBezierParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
-			break;
-		}
-		
-		POV p;
-		p.location = newLoc + Vector(0);
-		p.rotation = newRot + Rotator(0);
-		p.FOV = newFOV;
-		//camlog << "ID: " + to_string(prevSave.id) + ", [" + to_string_with_precision(currentTimeInMs, 4) + "][" + to_string_with_precision(timeElapsed, 4) + "][" + to_string_with_precision(p.FOV, 2) + "] (" + vector_to_string(p.location) + ") (" + rotator_to_string(p.rotation) + " )\n";
-		//camlog.flush();
-		//camlog << to_string(prevSave.id) + "," + to_string_with_precision(currentTimeInMs, 10) + ", " + to_string_with_precision(timeElapsed, 10) + "," + to_string_with_precision(usedSave.FOV, 10) + "," + vector_to_string(usedSave.location) + "," + rotator_to_string(usedSave.rotation) + "," + to_string_with_precision(p.FOV, 10) + "," + vector_to_string(p.location) + "," + rotator_to_string(p.rotation) + "," + rotator_to_string(usedSave.rotation) + "\n";
-		//camlog.flush();
-		gw->GetCamera().SetPOV(p);
-	}
-	else {
-		sw.SetSecondsElapsed(sw.GetReplayTimeElapsed());
-		firstFrame = true;
 	}
 
 	return 1.f;
@@ -191,6 +58,12 @@ void run_playback() {
 	}, playback());
 }
 
+void start_playback() 
+{
+	reset_iterator();
+	run_playback();
+}
+
 
 void dolly_onAllCommand(std::vector<std::string> params) 
 {
@@ -202,7 +75,7 @@ void dolly_onAllCommand(std::vector<std::string> params)
 			cons->log("Usage: " + params.at(0) + " filename");
 			return;
 		}
-		camlog.open("camlog.txt");
+		//camlog.open("camlog.txt");
 		string filename = params.at(1);
 		if (!file_exists("./bakkesmod/data/campaths/" + filename + ".json"))
 		{
@@ -228,6 +101,7 @@ void dolly_onAllCommand(std::vector<std::string> params)
 				it++;
 			}
 			cons->log("Loaded " + filename + ".json with " + to_string(currentPath->saves->size()) + " snapshots. current_id is " + to_string(current_id));
+			reset_iterator();
 		}
 		catch (exception e) {
 			cons->log("Could not load campath, invalid json format?");
@@ -250,6 +124,7 @@ void dolly_onAllCommand(std::vector<std::string> params)
 	else if (command.compare("dolly_path_clear") == 0)
 	{
 		currentPath->saves->clear();
+		reset_iterator();
 	}
 	else if (command.compare("dolly_interpmode") == 0)
 	{
@@ -273,6 +148,7 @@ void dolly_onAllCommand(std::vector<std::string> params)
 			{
 				currentPath->saves->erase(it);
 				cons->log("Removed snapshot with id " + params.at(1));
+				reset_iterator();
 				return;
 			}
 			else
@@ -384,6 +260,7 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 				snapshot.FOV = flyCam.GetFOV();
 				currentPath->saves->insert(std::make_pair(snapshot.timeStamp, snapshot));
 				cons->log("Updated snapshot with id " + to_string(id));
+				reset_iterator();
 				return;
 			}
 			else
@@ -408,6 +285,7 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 		//AddKeyFrame(save.frame);
 		cons->log("Snapshot saved under id " + to_string(current_id));
 		current_id++;
+		reset_iterator();
 	}
 	else if (command.compare("dolly_deactivate") == 0)
 	{
@@ -425,7 +303,7 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 		{
 			cons->log("Dolly cam activated");
 			playbackActive = true;
-			run_playback();
+			start_playback();
 		}
 		else 
 		{
@@ -497,6 +375,38 @@ void dolly_onFlyCamCommand(std::vector<std::string> params)
 		{
 			DollyCamCalculations::apply_chaikin(currentPath);
 		}
+		reset_iterator();
+	}
+}
+
+void dolly_onSimulation(std::vector<std::string> params)
+{
+	string command = params.at(0);
+	
+	if (command.compare("dolly_simulate") == 0) 
+	{
+		if (params.size() < 2) {
+			cons->log("Usage: " + command + " filename");
+			return;
+		}
+		string filename = params.at(1);
+
+		auto oldGameApplier = gameApplier;
+		MockGameApplier* mga = new MockGameApplier("./bakkesmod/data/cam/" + filename + ".data");
+		gameApplier = mga;
+		int fps = 60;
+		float currentTime = currentPath->saves->begin()->first;
+		float endTime = (--(currentPath->saves->end()))->first;
+
+		while (currentTime <= endTime) 
+		{
+			mga->SetTime(currentTime);
+			apply_frame(currentTime, currentTime);
+			currentTime += (1.f / (float)60);
+		}
+
+		delete mga;
+		gameApplier = oldGameApplier;
 	}
 }
 
@@ -504,6 +414,8 @@ void DollyCamPlugin::onLoad()
 {
 	gw = gameWrapper;
 	cons = console;
+
+	gameApplier = new RealGameApplier(gw);
 
 	cons->registerNotifier("dolly_snapshot_take", dolly_onFlyCamCommand);
 	cons->registerNotifier("dolly_snapshot_override", dolly_onFlyCamCommand);
@@ -530,6 +442,8 @@ void DollyCamPlugin::onLoad()
 
 	cons->registerNotifier("dolly_interpmode", dolly_onAllCommand);
 	cons->registerNotifier("dolly_interp_chaikin", dolly_onFlyCamCommand);
+
+	cons->registerNotifier("dolly_simulate", dolly_onSimulation);
 	/*gw->RegisterDrawable([](CanvasWrapper cw) {
 		if (!renderPath)
 			return;
@@ -558,4 +472,5 @@ void DollyCamPlugin::onLoad()
 
 void DollyCamPlugin::onUnload()
 {
+	delete gameApplier;
 }

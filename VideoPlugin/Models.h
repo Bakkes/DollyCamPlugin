@@ -9,8 +9,8 @@ enum InterpMode
 {
 	Linear = 0,
 	QuadraticBezier = 1,
-	RationalBezier = 2,
-	Chaikin = 3,
+	RationalBezier = 2, //Not implemented
+	Chaikin = 3, //Not an interp mode, but something that can be applied to existing path, why is this there
 };
 
 struct CameraSnapshot {
@@ -27,7 +27,7 @@ struct CameraSnapshot {
 
 
 struct Path {
-	std::unique_ptr<savetype> saves;
+	std::shared_ptr<savetype> saves;
 
 	Path() 
 	{
