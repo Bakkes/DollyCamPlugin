@@ -25,7 +25,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 			needsRefresh = false;
 		}
 		savetype::iterator current_next_next = std::next(current_next, 1);
-		if (current_next_next != currentPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
+		if (interp_mode != Linear && current_next_next != currentPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
 			needsRefresh = false;
 		}
 	}
