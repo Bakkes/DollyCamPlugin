@@ -14,6 +14,43 @@ Vector DollyCamCalculations::quadraticBezierCurve(Vector p0, Vector p1, Vector p
 	};
 }
 
+int factorial(int n)
+{
+	return (n == 1 || n == 0) ? 1 : factorial(n - 1) * n;
+}
+
+void DollyCamCalculations::nBezierCurve(std::shared_ptr<savetype> l2, float t, Vector & v, Rotator &r, float & fov)
+{
+	v = Vector(0);
+	r = Rotator(0);
+	fov = 0;
+	int n = l2->size();
+	int idx = 0;
+	for (auto it = l2->begin(); it != l2->end(); it++) 
+	{
+		float fact = (factorial(n - 1) / ((factorial(idx)*factorial((n - 1) - idx))));
+		float po = pow(1 - t, n - 1 - idx) * pow(t, idx);
+		float pofact = po * fact;
+
+
+		Vector v2 = Vector(fact) * Vector(po) * it->second.location;
+		Rotator r2;
+		r2.Pitch = it->second.rotation.Pitch * pofact;
+		r2.Yaw = it->second.rotation.Yaw * pofact;
+		r2.Roll = it->second.rotation.Roll * pofact;
+		float fov2 = fact * po * it->second.FOV;
+
+		v = v + v2;
+		r = r + r2;
+		fov = fov + fov2;
+		idx++;
+	}
+	//newVec = newVec + (Vector(pow(t, n-1)) * l.at(n - 1));
+	
+}
+
+
+
 void DollyCamCalculations::apply_chaikin(std::shared_ptr<Path> path)
 {
 	std::unique_ptr<savetype> newPath(new savetype());

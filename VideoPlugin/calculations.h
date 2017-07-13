@@ -9,6 +9,8 @@ namespace DollyCamCalculations {
 	//Quadratic bezier curve for vectors
 	Vector quadraticBezierCurve(Vector p0, Vector p1, Vector p2, float t);
 
+	void nBezierCurve(std::shared_ptr<savetype> l, float t, Vector &v, Rotator &r, float &fov);
+
 	//Apply chaikin to the given path
 	void apply_chaikin(std::shared_ptr<Path> path);
 

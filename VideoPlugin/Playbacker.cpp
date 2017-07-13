@@ -25,7 +25,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 			needsRefresh = false;
 		}
 		savetype::iterator current_next_next = std::next(current_next, 1);
-		if (interp_mode != Linear && current_next_next != currentPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
+		if (interp_mode != Linear && interp_mode != nBezier && current_next_next != currentPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
 			needsRefresh = false;
 		}
 	}
@@ -110,6 +110,11 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 		newRot.Yaw = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Yaw, nextSave.rotation.Yaw, nextNextSave.rotation.Yaw, percElapsed);
 		newRot.Roll = DollyCamCalculations::calculateBezierParam(prevSave.rotation.Roll, nextSave.rotation.Roll, nextNextSave.rotation.Roll, percElapsed);
 		newFOV = DollyCamCalculations::calculateBezierParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
+		break;
+	case nBezier:
+		float total = (--currentPath->saves->end())->first - currentPath->saves->begin()->first;
+		percElapsed = (currentTimeInMs - currentPath->saves->begin()->first) / total;
+		DollyCamCalculations::nBezierCurve(currentPath->saves, percElapsed, newLoc, newRot, newFOV);
 		break;
 	}
 
