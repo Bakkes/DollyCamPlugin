@@ -25,11 +25,11 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 	if (currentSnapshotIter != currentUsedPath->saves->end())
 	{
 		savetype::iterator current_next = std::next(currentSnapshotIter, 1);
-		if (current_next != currentUsedPath->saves->end() && currentSnapshotIter->second.timeStamp <= replaySeconds && current_next->second.timeStamp >= replaySeconds) {
+		if (current_next != currentUsedPath->saves->end() && currentSnapshotIter->second.timeStamp <= currentTimeInMs && current_next->second.timeStamp >= currentTimeInMs) {
 			needsRefresh = false;
 		}
 		savetype::iterator current_next_next = std::next(current_next, 1);
-		if (interp_mode == QuadraticBezier && current_next_next != currentUsedPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
+		if (interp_mode == QuadraticBezier && current_next_next != currentUsedPath->saves->end() && current_next->second.timeStamp <= currentTimeInMs && current_next_next->second.timeStamp >= currentTimeInMs) {
 			needsRefresh = false;
 		}
 	}
@@ -99,7 +99,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 		nextNextSave.timeStamp = -1;
 	}
 
-	if (endTime < replaySeconds)
+	if (endTime < currentTimeInMs)
 		return false;
 
 	float frameDiff = nextSave.timeStamp - prevSave.timeStamp;
@@ -151,7 +151,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 		newFOV = prevSave.FOV + ((nextSave.FOV - prevSave.FOV) * percElapsed);
 		break;
 	case cubic:
-		
+	case hermite:
 
 		if (prevSave.id == currentUsedPath->saves->begin()->second.id) 
 		{
@@ -175,12 +175,16 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 		--currentSnapshotIter;
 		--currentSnapshotIter;
 
-		timeElapsed = currentTimeInMs - ppSave.timeStamp;
-		frameDiff = nnSave.timeStamp - ppSave.timeStamp;
+		//timeElapsed = currentTimeInMs - ppSave.timeStamp;
+		//frameDiff = nnSave.timeStamp - ppSave.timeStamp;
 		percElapsed = timeElapsed / frameDiff;
-
-		newLoc = DollyCamCalculations::cubicInterp(ppSave.location, prevSave.location, nextSave.location, nnSave.location, percElapsed);
-
+		switch (interp_mode) {
+		case cubic:
+			newLoc = DollyCamCalculations::cubicInterp(ppSave.location, prevSave.location, nextSave.location, nnSave.location, percElapsed);
+		case hermite:
+			newLoc = DollyCamCalculations::hermiteInterp(ppSave.location, prevSave.location, nextSave.location, nnSave.location, percElapsed);
+			break;
+		}
 		newRot.Pitch = prevSave.rotation.Pitch + ((nextSave.rotation.Pitch - prevSave.rotation.Pitch) * percElapsed);
 		newRot.Yaw = prevSave.rotation.Yaw + ((nextSave.rotation.Yaw - prevSave.rotation.Yaw) * percElapsed);
 		newRot.Roll = prevSave.rotation.Roll + ((nextSave.rotation.Roll - prevSave.rotation.Roll) * percElapsed);

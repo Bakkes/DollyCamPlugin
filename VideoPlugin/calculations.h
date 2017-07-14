@@ -23,6 +23,9 @@ namespace DollyCamCalculations {
 	Vector cubicInterp(Vector p0, Vector p1, Vector p2, Vector p3, float t);
 	
 
+	float hermiteInterp(float y0, float y1, float y2, float y3, float t);
+	Vector hermiteInterp(Vector p0, Vector p1, Vector p2, Vector p3, float t);
+
 	//Overflows rotators so camera doesn't rotate the wrong way. Could probably be done in a better way lol
 	void fix_rotators(Rotator *prevSave, Rotator *nextSave, Rotator *nextNextSave);
 

@@ -13,7 +13,8 @@ enum InterpMode
 	//Chaikin = 3, //Not an interp mode, but something that can be applied to existing path, why is this there
 	nBezier = 2,
 	cosine = 3,
-	cubic = 4
+	cubic = 4,
+	hermite = 5
 };
 
 struct CameraSnapshot {

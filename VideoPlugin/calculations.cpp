@@ -219,6 +219,32 @@ Vector DollyCamCalculations::cubicInterp(Vector p0, Vector p1, Vector p2, Vector
 	return Vector(cubicInterp(p0.X, p1.X, p2.X, p3.X, t), cubicInterp(p0.Y, p1.Y, p2.Y, p3.Y, t), cubicInterp(p0.Z, p1.Z, p2.Z, p3.Z, t));
 }
 
+float DollyCamCalculations::hermiteInterp(float y0, float y1, float y2, float y3, float t)
+{
+	float m0, m1, mu2, mu3;
+	float a0, a1, a2, a3;
+	float bias = 0;
+	float tension = 0;
+
+	mu2 = t * t;
+	mu3 = mu2 * t;
+	m0 = (y1 - y0)*(1 + bias)*(1 - tension) / 2;
+	m0 += (y2 - y1)*(1 - bias)*(1 - tension) / 2;
+	m1 = (y2 - y1)*(1 + bias)*(1 - tension) / 2;
+	m1 += (y3 - y2)*(1 - bias)*(1 - tension) / 2;
+	a0 = 2 * mu3 - 3 * mu2 + 1;
+	a1 = mu3 - 2 * mu2 + t;
+	a2 = mu3 - mu2;
+	a3 = -2 * mu3 + 3 * mu2;
+
+	return(a0*y1 + a1*m0 + a2*m1 + a3*y2);
+}
+
+Vector DollyCamCalculations::hermiteInterp(Vector p0, Vector p1, Vector p2, Vector p3, float t)
+{
+	return Vector(hermiteInterp(p0.X, p1.X, p2.X, p3.X, t), hermiteInterp(p0.Y, p1.Y, p2.Y, p3.Y, t), hermiteInterp(p0.Z, p1.Z, p2.Z, p3.Z, t));
+}
+
 void DollyCamCalculations::fix_rotators(Rotator * prevSave, Rotator * nextSave, Rotator * nextNextSave)
 {
 	if (prevSave->Yaw < 0)
