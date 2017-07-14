@@ -12,6 +12,8 @@ enum InterpMode
 	//RationalBezier = 2, //Not implemented
 	//Chaikin = 3, //Not an interp mode, but something that can be applied to existing path, why is this there
 	nBezier = 2,
+	cosine = 3,
+	cubic = 4
 };
 
 struct CameraSnapshot {

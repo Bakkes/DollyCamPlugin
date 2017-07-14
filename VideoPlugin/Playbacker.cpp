@@ -29,7 +29,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 			needsRefresh = false;
 		}
 		savetype::iterator current_next_next = std::next(current_next, 1);
-		if (interp_mode != Linear && interp_mode != nBezier && current_next_next != currentUsedPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
+		if (interp_mode == QuadraticBezier && current_next_next != currentUsedPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
 			needsRefresh = false;
 		}
 	}
@@ -50,7 +50,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 					auto prev = &(it->second.rotation);
 					auto next = &((++it)->second.rotation);
 					auto nextNext = &((++it)->second.rotation);
-					//DollyCamCalculations::fix_rotators(prev, next, nextNext);
+					DollyCamCalculations::fix_rotators(prev, next, nextNext);
 					--it;
 					--it;
 				}
@@ -73,7 +73,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 		{
 			gameApplier->SetPOV(currentSnapshot.location, currentSnapshot.rotation, currentSnapshot.FOV);
 		}
-		else if(interp_mode != nBezier)
+		else if(interp_mode != nBezier && interp_mode != cosine && interp_mode != cubic)
 		{
 			POV curPov = gameApplier->GetPOV();
 			currentSnapshot.location = curPov.location;
@@ -108,13 +108,13 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 	Rotator snapR = Rotator(frameDiff);
 	Vector snap = Vector(frameDiff);
 
-	//DollyCamCalculations::fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
+	DollyCamCalculations::fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
 
 	Vector newLoc;
 	Rotator newRot;
 	float newFOV = 0;
 	float percElapsed = 0;
-
+	float total = 0;
 	switch (interp_mode) {
 	case Linear:
 		percElapsed = timeElapsed / frameDiff;
@@ -137,9 +137,54 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 		newFOV = DollyCamCalculations::calculateBezierParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
 		break;
 	case nBezier:
-		float total = (--currentUsedPath->saves->end())->first - currentUsedPath->saves->begin()->first;
+		total = (--currentUsedPath->saves->end())->first - currentUsedPath->saves->begin()->first;
 		percElapsed = (currentTimeInMs - currentUsedPath->saves->begin()->first) / total;
 		DollyCamCalculations::nBezierCurve(currentUsedPath->saves, percElapsed, newLoc, newRot, newFOV);
+		break;
+	case cosine:
+		percElapsed = timeElapsed / frameDiff;
+		newLoc = DollyCamCalculations::cosineInterp(prevSave.location, nextSave.location, percElapsed);
+
+		newRot.Pitch = prevSave.rotation.Pitch + ((nextSave.rotation.Pitch - prevSave.rotation.Pitch) * percElapsed);
+		newRot.Yaw = prevSave.rotation.Yaw + ((nextSave.rotation.Yaw - prevSave.rotation.Yaw) * percElapsed);
+		newRot.Roll = prevSave.rotation.Roll + ((nextSave.rotation.Roll - prevSave.rotation.Roll) * percElapsed);
+		newFOV = prevSave.FOV + ((nextSave.FOV - prevSave.FOV) * percElapsed);
+		break;
+	case cubic:
+		
+
+		if (prevSave.id == currentUsedPath->saves->begin()->second.id) 
+		{
+			interp_mode = cosine;
+			bool res = apply_frame(replaySeconds, currentTimeInMs);
+			interp_mode = cubic;
+			return res;
+		}
+		if (nextSave.id == (--currentUsedPath->saves->end())->second.id)
+		{
+			interp_mode = cosine;
+			bool res = apply_frame(replaySeconds, currentTimeInMs);
+			interp_mode = cubic;
+			return res;
+		}
+		CameraSnapshot ppSave = (--currentSnapshotIter)->second;
+		++currentSnapshotIter;
+		++currentSnapshotIter;
+		++currentSnapshotIter;
+		CameraSnapshot nnSave = (currentSnapshotIter)->second;
+		--currentSnapshotIter;
+		--currentSnapshotIter;
+
+		timeElapsed = currentTimeInMs - ppSave.timeStamp;
+		frameDiff = nnSave.timeStamp - ppSave.timeStamp;
+		percElapsed = timeElapsed / frameDiff;
+
+		newLoc = DollyCamCalculations::cubicInterp(ppSave.location, prevSave.location, nextSave.location, nnSave.location, percElapsed);
+
+		newRot.Pitch = prevSave.rotation.Pitch + ((nextSave.rotation.Pitch - prevSave.rotation.Pitch) * percElapsed);
+		newRot.Yaw = prevSave.rotation.Yaw + ((nextSave.rotation.Yaw - prevSave.rotation.Yaw) * percElapsed);
+		newRot.Roll = prevSave.rotation.Roll + ((nextSave.rotation.Roll - prevSave.rotation.Roll) * percElapsed);
+		newFOV = prevSave.FOV + ((nextSave.FOV - prevSave.FOV) * percElapsed);
 		break;
 	}
 	
