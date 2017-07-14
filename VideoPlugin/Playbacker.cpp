@@ -5,7 +5,7 @@ std::shared_ptr<Path> currentPath(new Path());
 IGameApplier* gameApplier;
 
 int current_id = 0;
-byte interp_mode = 1;
+byte interp_mode = 2;
 bool renderPath = false;
 
 bool playbackActive = false;
@@ -15,40 +15,65 @@ int previousID = -1;
 savetype::iterator currentSnapshotIter;
 CameraSnapshot currentSnapshot;
 
+//Two types of interp, frame by frame (n-1, n, n+1) or full interp, 0...N
+std::shared_ptr<Path> currentUsedPath(new Path());
+bool needsNewCopy = true;
+
 bool apply_frame(float replaySeconds, float currentTimeInMs)
 {
 	bool needsRefresh = true;
-	if (currentSnapshotIter != currentPath->saves->end())
+	if (currentSnapshotIter != currentUsedPath->saves->end())
 	{
 		savetype::iterator current_next = std::next(currentSnapshotIter, 1);
-		if (current_next != currentPath->saves->end() && currentSnapshotIter->second.timeStamp <= replaySeconds && current_next->second.timeStamp >= replaySeconds) {
+		if (current_next != currentUsedPath->saves->end() && currentSnapshotIter->second.timeStamp <= replaySeconds && current_next->second.timeStamp >= replaySeconds) {
 			needsRefresh = false;
 		}
 		savetype::iterator current_next_next = std::next(current_next, 1);
-		if (interp_mode != Linear && interp_mode != nBezier && current_next_next != currentPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
+		if (interp_mode != Linear && interp_mode != nBezier && current_next_next != currentUsedPath->saves->end() && current_next->second.timeStamp <= replaySeconds && current_next_next->second.timeStamp >= replaySeconds) {
 			needsRefresh = false;
 		}
 	}
-	if (needsRefresh) 
+	if (needsRefresh)
 	{
 		currentSnapshotIter = find_current_snapshot(currentTimeInMs); //optimize this
 	}
-	if (currentSnapshotIter == currentPath->saves->end() || currentSnapshotIter->first > replaySeconds)
+	if (currentSnapshotIter == currentUsedPath->saves->end() || currentSnapshotIter->first > replaySeconds)
 	{
+		if (needsNewCopy)
+		{
+			currentUsedPath->saves->clear();
+			currentUsedPath->saves->insert(currentPath->saves->begin(), currentPath->saves->end());
+			if (currentUsedPath->saves->size() > 2)
+			{
+				for (auto it = (currentUsedPath->saves->begin()); it != --(--(currentUsedPath->saves->end())); it++)
+				{
+					auto prev = &(it->second.rotation);
+					auto next = &((++it)->second.rotation);
+					auto nextNext = &((++it)->second.rotation);
+					//DollyCamCalculations::fix_rotators(prev, next, nextNext);
+					--it;
+					--it;
+				}
+			}
+
+			reset_iterator();
+			needsNewCopy = false;
+		}
 		previousID = -1;
 		return false;
 	}
+	needsNewCopy = true;
 
 	savetype::iterator nextSnapshot = std::next(currentSnapshotIter, 1);
 
 	if (previousID != currentSnapshotIter->second.id) //new snapshot selected
 	{
 		currentSnapshot = currentSnapshotIter->second;
-		if (currentSnapshotIter == currentPath->saves->begin())//Determine if it just hit the first frame
+		if (currentSnapshotIter == currentUsedPath->saves->begin())//Determine if it just hit the first frame
 		{
 			gameApplier->SetPOV(currentSnapshot.location, currentSnapshot.rotation, currentSnapshot.FOV);
 		}
-		else
+		else if(interp_mode != nBezier)
 		{
 			POV curPov = gameApplier->GetPOV();
 			currentSnapshot.location = curPov.location;
@@ -83,7 +108,7 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 	Rotator snapR = Rotator(frameDiff);
 	Vector snap = Vector(frameDiff);
 
-	DollyCamCalculations::fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
+	//DollyCamCalculations::fix_rotators(&prevSave.rotation, &nextSave.rotation, &nextNextSave.rotation);
 
 	Vector newLoc;
 	Rotator newRot;
@@ -112,11 +137,12 @@ bool apply_frame(float replaySeconds, float currentTimeInMs)
 		newFOV = DollyCamCalculations::calculateBezierParam(prevSave.FOV, nextSave.FOV, nextNextSave.FOV, percElapsed);
 		break;
 	case nBezier:
-		float total = (--currentPath->saves->end())->first - currentPath->saves->begin()->first;
-		percElapsed = (currentTimeInMs - currentPath->saves->begin()->first) / total;
-		DollyCamCalculations::nBezierCurve(currentPath->saves, percElapsed, newLoc, newRot, newFOV);
+		float total = (--currentUsedPath->saves->end())->first - currentUsedPath->saves->begin()->first;
+		percElapsed = (currentTimeInMs - currentUsedPath->saves->begin()->first) / total;
+		DollyCamCalculations::nBezierCurve(currentUsedPath->saves, percElapsed, newLoc, newRot, newFOV);
 		break;
 	}
+	
 
 	POV p;
 	p.location = newLoc + Vector(0);
@@ -135,18 +161,18 @@ savetype::iterator find_current_snapshot(float currentTime)
 {
 //If it reached this it is totally out of sync
 
-	savetype::iterator current_it = currentPath->saves->end();
-	savetype::iterator next_it = currentPath->saves->end();
-	savetype::iterator next_next_it = currentPath->saves->end();
-	for (savetype::iterator it = currentPath->saves->begin(); it != currentPath->saves->end(); it++)
+	savetype::iterator current_it = currentUsedPath->saves->end();
+	savetype::iterator next_it = currentUsedPath->saves->end();
+	savetype::iterator next_next_it = currentUsedPath->saves->end();
+	for (savetype::iterator it = currentUsedPath->saves->begin(); it != currentUsedPath->saves->end(); it++)
 	{
 		int it_incs = 0;
 		current_it = it;
-		if (std::next(it, 1) != currentPath->saves->end())
+		if (std::next(it, 1) != currentUsedPath->saves->end())
 		{
 			next_it = std::next(it, 1);
 			it_incs++;
-			if (std::next(next_it, 1) != currentPath->saves->end())
+			if (std::next(next_it, 1) != currentUsedPath->saves->end())
 			{
 				next_next_it = std::next(next_it, 1);
 				it_incs++;
@@ -157,7 +183,7 @@ savetype::iterator find_current_snapshot(float currentTime)
 		if (current_it->second.timeStamp <= currentTime && next_it->second.timeStamp >= currentTime) //found our point in time
 		{
 			if (it_incs == 1 && interp_mode == QuadraticBezier) { //if there is no nextnext, just take last 3 items
-				it = (currentPath->saves->end());
+				it = (currentUsedPath->saves->end());
 				next_next_it = (--it);
 				next_it = (--it);
 				current_it = (--it);
@@ -166,10 +192,10 @@ savetype::iterator find_current_snapshot(float currentTime)
 			return current_it;
 		}
 	}
-	return currentPath->saves->begin();
+	return currentUsedPath->saves->begin();
 }
 
 void reset_iterator()
 {
-	currentSnapshotIter = currentPath->saves->end();
+	currentSnapshotIter = currentUsedPath->saves->end();
 }

@@ -14,7 +14,7 @@ Vector DollyCamCalculations::quadraticBezierCurve(Vector p0, Vector p1, Vector p
 	};
 }
 
-int factorial(int n)
+uint64_t factorial(int n)
 {
 	return (n == 1 || n == 0) ? 1 : factorial(n - 1) * n;
 }
@@ -25,25 +25,28 @@ void DollyCamCalculations::nBezierCurve(std::shared_ptr<savetype> l2, float t, V
 	r = Rotator(0);
 	fov = 0;
 	int n = l2->size();
-	int idx = 0;
+	int k = 0;
 	for (auto it = l2->begin(); it != l2->end(); it++) 
 	{
-		float fact = (factorial(n - 1) / ((factorial(idx)*factorial((n - 1) - idx))));
-		float po = pow(1 - t, n - 1 - idx) * pow(t, idx);
+		uint64_t fact = (factorial(n - 1) / ((factorial(k)*factorial((n - 1) - k))));
+		float po = pow(1 - t, n - 1 - k) * pow(t, k);
 		float pofact = po * fact;
 
 
-		Vector v2 = Vector(fact) * Vector(po) * it->second.location;
+		Vector v2 = Vector(po) * Vector(fact) * it->second.location;
 		Rotator r2;
 		r2.Pitch = it->second.rotation.Pitch * pofact;
 		r2.Yaw = it->second.rotation.Yaw * pofact;
 		r2.Roll = it->second.rotation.Roll * pofact;
-		float fov2 = fact * po * it->second.FOV;
+		float fov2 = pofact * it->second.FOV;
 
 		v = v + v2;
-		r = r + r2;
+		r.Pitch += r2.Pitch;
+		r.Yaw += r2.Yaw;
+		r.Roll += r2.Roll;
+
 		fov = fov + fov2;
-		idx++;
+		k++;
 	}
 	//newVec = newVec + (Vector(pow(t, n-1)) * l.at(n - 1));
 	
