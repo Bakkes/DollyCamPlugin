@@ -1,5 +1,5 @@
 #pragma once
-#include "wrappers\gamewrapper.h"
+#include "bakkesmod/wrappers/gamewrapper.h"
 
 //Interface for applying stuff to the game which will help with simulations
 class IGameApplier

@@ -1,5 +1,4 @@
 #include "DollyCamPlugin.h"
-#include "helpers.h"
 
 
 #include "Playbacker.h"
@@ -8,12 +7,22 @@
 #include "Serialization.h"
 #include "IGameApplier.h"
 
+#include "bakkesmod\wrappers\replaywrapper.h"
+#include "bakkesmod\wrappers\camerawrapper.h"
+#include "utils/io.h"
+#include "utils/parser.h"
+#include <iostream>
+#include <memory>
+#include <functional>
+
+using namespace std::placeholders;
 
 BAKKESMOD_PLUGIN(DollyCamPlugin, "Dollycam plugin", "0.2", 0)
+typedef unsigned char byte;
 
 //Known bug, cannot have path after goal if path started before goal
 GameWrapper* gw = NULL;
-ConsoleWrapper* cons = NULL;
+CVarManagerWrapper* cons = NULL;
 
 extern std::shared_ptr<Path> currentPath;
 extern IGameApplier* gameApplier;
@@ -412,8 +421,8 @@ void dolly_onSimulation(std::vector<std::string> params)
 
 void DollyCamPlugin::onLoad()
 {
-	gw = gameWrapper;
-	cons = console;
+	gw = gameWrapper.get();
+	cons = cvarManager.get();
 
 	gameApplier = new RealGameApplier(gw);
 
@@ -444,6 +453,9 @@ void DollyCamPlugin::onLoad()
 	cons->registerNotifier("dolly_interp_chaikin", dolly_onFlyCamCommand);
 
 	cons->registerNotifier("dolly_simulate", dolly_onSimulation);
+
+	gameWrapper->HookEvent("Function Engine.GameViewportClient.Tick", bind(&DollyCamPlugin::onTick, this, _1));
+
 	/*gw->RegisterDrawable([](CanvasWrapper cw) {
 		if (!renderPath)
 			return;
@@ -473,4 +485,16 @@ void DollyCamPlugin::onLoad()
 void DollyCamPlugin::onUnload()
 {
 	delete gameApplier;
+}
+
+void DollyCamPlugin::onTick(std::string ignoredParam)
+{
+	if (playbackActive) {
+		if (!gw->IsInReplay() || !playbackActive)
+		{
+			playbackActive = false;
+			return;
+		}
+		playback();
+	}
 }

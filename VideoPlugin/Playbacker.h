@@ -1,8 +1,8 @@
 #pragma once
-#include "wrappers\wrapperstructs.h"
+#include "bakkesmod/wrappers/wrapperstructs.h"
 #include "Models.h"
 #include "IGameApplier.h"
-#include "helpers.h"
+#include "utils/io.h"
 #include <fstream>
 
 bool apply_frame(float replaySeconds, float currentTimeInMs);

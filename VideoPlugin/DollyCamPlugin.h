@@ -1,12 +1,13 @@
 #pragma once
 #pragma comment(lib, "BakkesMod.lib")
-#include "plugin\bakkesmodplugin.h"
+#include "bakkesmod\plugin\bakkesmodplugin.h"
 
-class DollyCamPlugin : public bakkesmod::plugin::BakkesModPlugin
+class DollyCamPlugin : public BakkesMod::Plugin::BakkesModPlugin
 {
 public:
 	virtual void onLoad();
 	virtual void onUnload();
+	void onTick(std::string ignoredParam);
 };
 
 template<typename T>

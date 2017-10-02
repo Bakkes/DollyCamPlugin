@@ -5,7 +5,7 @@
 #include <cereal/archives/json.hpp>
 
 #include "Models.h"
-#include "helpers.h"
+
 template <class Archive>
 void serialize(Archive & ar, Vector & vector)
 {
@@ -34,6 +34,6 @@ void serialize(Archive & ar, Path & path)
 }
 
 
-string vector_to_string(Vector v);
+std::string vector_to_string(Vector v);
 
-string rotator_to_string(Rotator r);
+std::string rotator_to_string(Rotator r);

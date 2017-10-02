@@ -1,5 +1,5 @@
 #pragma once
-#include "wrappers/wrapperstructs.h"
+#include "bakkesmod/wrappers/wrapperstructs.h"
 #include <map>
 #include <memory>
 #define savetype std::map<float, CameraSnapshot>
